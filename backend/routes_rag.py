@@ -1,42 +1,373 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from common import db, ai, IngestFeedRequest
+import csv
+import html
+import io
+import ipaddress
+import json
+import re
+import socket
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from common import db, ai, IngestFeedRequest, IngestSourceRequest
 from datetime import datetime
+from urllib.parse import urljoin, urlparse, urldefrag
 
 router = APIRouter()
 
+STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "can", "for", "from", "give", "high", "i",
+    "in", "is", "it", "me", "of", "on", "or", "show", "tell", "the", "to", "what", "which",
+    "with", "you"
+}
+
+TOKEN_EXPANSIONS = {
+    "movie": {"movie", "movies", "film", "films", "theater", "theaters", "watchlist"},
+    "movies": {"movie", "movies", "film", "films", "theater", "theaters", "watchlist"},
+    "film": {"movie", "movies", "film", "films"},
+    "rated": {"rated", "rating", "ratings", "rate", "score", "scores", "tomatometer", "audience", "%"},
+    "rate": {"rated", "rating", "ratings", "rate", "score", "scores", "tomatometer", "audience", "%"},
+    "rating": {"rated", "rating", "ratings", "rate", "score", "scores", "tomatometer", "audience", "%"},
+    "top": {"top", "best", "highest", "high", "100%", "99%", "98%", "97%", "96%", "95%"},
+    "best": {"top", "best", "highest", "high", "100%", "99%", "98%", "97%", "96%", "95%"},
+    "highest": {"top", "best", "highest", "high", "100%", "99%", "98%", "97%", "96%", "95%"},
+}
+
+
+def _row_value(row, name, default=""):
+    return row.get(name) if name in row else row.get(name.upper(), row.get(name.lower(), default))
+
+
+def _query_terms(query: str):
+    raw_terms = re.findall(r"[a-zA-Z0-9%']+", (query or "").lower())
+    terms = set()
+    for term in raw_terms:
+        cleaned = term.strip("'")
+        if len(cleaned) < 2 or cleaned in STOP_WORDS:
+            continue
+        terms.add(cleaned)
+        if cleaned.endswith("s") and len(cleaned) > 3:
+            terms.add(cleaned[:-1])
+        terms.update(TOKEN_EXPANSIONS.get(cleaned, set()))
+    return terms
+
+
+def _parse_metadata(value):
+    try:
+        return json.loads(value or "{}")
+    except Exception:
+        return {}
+
+
+def _score_document(doc, query: str):
+    title = str(_row_value(doc, "TITLE", ""))
+    source_type = str(_row_value(doc, "SOURCE_TYPE", ""))
+    content = str(_row_value(doc, "CONTENT", ""))
+    metadata = _parse_metadata(_row_value(doc, "METADATA", "{}"))
+    haystack = f"{title} {source_type} {content} {json.dumps(metadata, default=str)}".lower()
+    title_text = title.lower()
+    terms = _query_terms(query)
+    if not terms:
+        return 0
+
+    score = 0
+    for term in terms:
+        if term in haystack:
+            score += 1 + min(haystack.count(term), 6)
+        if term in title_text:
+            score += 4
+
+    query_lower = (query or "").lower()
+    if any(token in query_lower for token in ("movie", "film", "rate", "rated", "rating", "tomato")):
+        if any(token in haystack for token in ("rotten", "tomatoes", "watchlist", "tomatometer", "movie", "film")):
+            score += 8
+        if any(token in haystack for token in ("snowflake", "warehouse", "customer", "pipeline", "governance")):
+            score -= 8
+
+    if source_type.lower() in ("web page", "batch web page", "uploaded html", "pasted text"):
+        score += 2
+
+    return score
+
+
+def _plain_text_from_html(value: str) -> str:
+    value = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
+    value = re.sub(r"(?s)<[^>]+>", " ", value)
+    value = html.unescape(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _chunk_text(text: str, chunk_size: int = 1400):
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
+    if not paragraphs and text.strip():
+        paragraphs = [text.strip()]
+
+    chunks = []
+    current_chunk = ""
+    for paragraph in paragraphs:
+        if len(paragraph) > chunk_size:
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            for idx in range(0, len(paragraph), chunk_size):
+                chunks.append(paragraph[idx:idx + chunk_size])
+            continue
+
+        if len(current_chunk) + len(paragraph) + 2 <= chunk_size:
+            current_chunk = f"{current_chunk}\n\n{paragraph}" if current_chunk else paragraph
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = paragraph
+
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
+
+def _detect_format(filename: str = "", requested_format: str = "auto"):
+    selected = (requested_format or "auto").lower()
+    if selected != "auto":
+        return selected
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext in ("xlsx", "xls"):
+        return "excel"
+    if ext in ("csv", "tsv"):
+        return "csv"
+    if ext == "json":
+        return "json"
+    if ext in ("html", "htm"):
+        return "html"
+    if ext in ("txt", "md", "log", "sql", "yaml", "yml", "xml"):
+        return "text"
+    return "raw"
+
+
+def _extract_text_from_bytes(filename: str, content: bytes, requested_format: str = "auto"):
+    fmt = _detect_format(filename, requested_format)
+    decoded = content.decode("utf-8", errors="ignore")
+
+    if fmt == "json":
+        parsed = json.loads(decoded)
+        return json.dumps(parsed, indent=2, default=str), "JSON"
+
+    if fmt == "csv":
+        delimiter = "\t" if filename.lower().endswith(".tsv") else ","
+        rows = list(csv.reader(io.StringIO(decoded), delimiter=delimiter))
+        preview = [" | ".join(row) for row in rows[:500]]
+        return "\n".join(preview), "CSV"
+
+    if fmt == "excel":
+        try:
+            import pandas as pd
+            sheets = pd.read_excel(io.BytesIO(content), sheet_name=None)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Excel parsing failed. Install openpyxl if needed. Details: {exc}")
+        sheet_text = []
+        for sheet_name, frame in sheets.items():
+            sheet_text.append(f"Sheet: {sheet_name}\n{frame.head(500).to_csv(index=False)}")
+        return "\n\n".join(sheet_text), "Excel"
+
+    if fmt == "html":
+        return _plain_text_from_html(decoded), "HTML"
+
+    return decoded, fmt.upper() if fmt else "File"
+
+
+def _clamp_int(value, minimum: int, maximum: int, default: int):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _validate_public_url(url: str):
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Only public http/https URLs can be ingested.")
+    host = parsed.hostname.lower()
+    if host in ("localhost",) or host.endswith(".local"):
+        raise HTTPException(status_code=400, detail="Local/private hosts cannot be ingested.")
+
+    addresses = []
+    try:
+        addresses.append(ipaddress.ip_address(host))
+    except ValueError:
+        try:
+            addresses.extend({ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(host, None)})
+        except socket.gaierror:
+            return
+
+    for address in addresses:
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        ):
+            raise HTTPException(status_code=400, detail="Local/private network URLs cannot be ingested.")
+
+
+async def _fetch_web_page(url: str):
+    _validate_public_url(url)
+    try:
+        import httpx
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
+            response = await client.get(url, headers={"User-Agent": "DataPilot Document Hub"})
+            response.raise_for_status()
+            raw = response.text
+            final_url = str(response.url)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to read web page: {exc}")
+
+    title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", raw)
+    title = _plain_text_from_html(title_match.group(1)) if title_match else final_url
+    return {"url": final_url, "title": title, "html": raw, "text": _plain_text_from_html(raw)}
+
+
+def _extract_child_links(base_url: str, raw_html: str, root_host: str):
+    links = []
+    for href in re.findall(r"(?is)<a\s+[^>]*href=[\"']([^\"'#]+)[\"']", raw_html or ""):
+        href = href.strip()
+        if not href or href.startswith(("mailto:", "tel:", "javascript:")):
+            continue
+        absolute = urldefrag(urljoin(base_url, href))[0]
+        parsed = urlparse(absolute)
+        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != root_host:
+            continue
+        if re.search(r"\.(jpg|jpeg|png|gif|svg|webp|pdf|zip|mp4|mov|avi|css|js)$", parsed.path, re.I):
+            continue
+        links.append(absolute)
+    return list(dict.fromkeys(links))
+
+
+async def _crawl_web_pages(start_url: str, crawl_depth: int = 0, max_pages: int = 10):
+    depth = _clamp_int(crawl_depth, 0, 2, 0)
+    page_limit = _clamp_int(max_pages, 1, 25, 10)
+    root_host = urlparse(start_url).netloc.lower()
+    queue = [(urldefrag(start_url)[0], 0)]
+    seen = set()
+    pages = []
+    failures = []
+
+    while queue and len(pages) < page_limit:
+        url, current_depth = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+
+        try:
+            page = await _fetch_web_page(url)
+            page["depth"] = current_depth
+            pages.append(page)
+        except HTTPException as exc:
+            failures.append({"url": url, "error": str(exc.detail)})
+            continue
+
+        if current_depth >= depth:
+            continue
+
+        for child_url in _extract_child_links(page["url"], page["html"], root_host):
+            if child_url not in seen and len(queue) + len(pages) < page_limit:
+                queue.append((child_url, current_depth + 1))
+
+    if not pages:
+        detail = failures[0]["error"] if failures else "No readable pages were found."
+        raise HTTPException(status_code=400, detail=detail)
+
+    return pages, failures
+
+
+async def _extract_text_from_url(url: str):
+    page = await _fetch_web_page(url)
+    return page["title"], page["text"]
+
+
+async def _index_crawled_site(url: str, source_label: str, title_override: str = "", crawl_depth: int = 0, max_pages: int = 10, batch: bool = False):
+    pages, failures = await _crawl_web_pages(url, crawl_depth, max_pages)
+    total_chunks = 0
+    indexed_titles = []
+
+    for idx, page in enumerate(pages):
+        title = title_override if title_override and idx == 0 else page["title"]
+        chunks = _index_chunks(
+            title,
+            source_label,
+            page["text"],
+            {
+                "url": page["url"],
+                "format": "web",
+                "crawl_depth": crawl_depth,
+                "page_depth": page["depth"],
+                "batch": batch,
+            }
+        )
+        total_chunks += chunks
+        indexed_titles.append(title)
+
+    return {
+        "chunks": total_chunks,
+        "pages": len(pages),
+        "titles": indexed_titles,
+        "failures": failures,
+    }
+
+
+def _index_chunks(title: str, source_type: str, text: str, metadata: dict):
+    chunks = _chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No readable text was found to index.")
+
+    success_count = 0
+    for i, chunk in enumerate(chunks):
+        chunk_title = f"{title} (Chunk {i + 1}/{len(chunks)})" if len(chunks) > 1 else title
+        chunk_meta = {
+            **metadata,
+            "chunk_index": i,
+            "total_chunks": len(chunks),
+            "ingested_at": str(datetime.now())
+        }
+        if db.add_rag_document(title=chunk_title, source_type=source_type, content=chunk, metadata=chunk_meta):
+            success_count += 1
+    return success_count
+
 @router.get("/api/rag/search")
 async def search_rag(query: str = ""):
-    docs_res = db.execute_query("SELECT title, source_type, content, metadata FROM rag_documents")
+    docs_res = db.execute_query("SELECT rowid, title, source_type, content, metadata FROM rag_documents")
     if not docs_res.get("success"):
          raise HTTPException(status_code=500, detail="Failed to load knowledge database.")
          
     docs = docs_res.get("data", [])
-    
-    # Match query keywords locally to RAG chunks
-    matched_chunks = []
-    q = query.lower()
+
+    scored_chunks = []
     for doc in docs:
-        if any(kw in doc["CONTENT"].lower() or kw in doc["TITLE"].lower() for kw in q.split()):
-            # Parse json metadata safely
-            meta = {}
-            try:
-                import json
-                meta = json.loads(doc["METADATA"])
-            except:
-                pass
-            doc["parsed_metadata"] = meta
-            matched_chunks.append(doc)
-            
-    # Default to all if no match found
+        score = _score_document(doc, query)
+        if score > 0:
+            doc["parsed_metadata"] = _parse_metadata(_row_value(doc, "METADATA", "{}"))
+            doc["RELEVANCE_SCORE"] = score
+            scored_chunks.append(doc)
+
+    matched_chunks = sorted(
+        scored_chunks,
+        key=lambda item: (item.get("RELEVANCE_SCORE", 0), _row_value(item, "ROWID", _row_value(item, "rowid", 0))),
+        reverse=True
+    )[:10]
+
     if not matched_chunks:
-        matched_chunks = docs
+        return {
+            "answer": "I could not find relevant indexed content for that question. The page may not have been learned correctly, or the question may need a source-specific keyword such as a movie title, page name, or rating term.",
+            "citations": [],
+            "source_chunks": [],
+            "retrieval_status": "no_match"
+        }
         
     answer_res = ai.answer_rag(query, matched_chunks)
     
     return {
         "answer": answer_res.get("answer", ""),
         "citations": answer_res.get("citations", []),
-        "source_chunks": matched_chunks
+        "source_chunks": matched_chunks,
+        "retrieval_status": "matched"
     }
 
 def parse_rss_feed(url: str):
@@ -146,54 +477,146 @@ async def ingest_feed(req: IngestFeedRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to ingest RSS feed: {str(e)}")
 
+
+@router.post("/api/rag/ingest/source")
+async def ingest_source(req: IngestSourceRequest):
+    source_type = (req.source_type or "").lower()
+    requested_format = req.format or "auto"
+
+    if source_type == "web":
+        if not req.url:
+            raise HTTPException(status_code=400, detail="URL is required.")
+        crawl_result = await _index_crawled_site(
+            req.url,
+            "Web Page" if not req.crawl_depth else "Crawled Web Page",
+            req.title or "",
+            req.crawl_depth or 0,
+            req.max_pages or 10
+        )
+        return {
+            "success": True,
+            "message": f"Indexed {crawl_result['pages']} web pages into {crawl_result['chunks']} searchable chunks.",
+            "chunks_count": crawl_result["chunks"],
+            "pages_count": crawl_result["pages"],
+            "titles": crawl_result["titles"],
+            "failures": crawl_result["failures"]
+        }
+    elif source_type == "text":
+        if not req.content:
+            raise HTTPException(status_code=400, detail="Text content is required.")
+        doc_title = req.title or "Pasted Document"
+        text = req.content
+        source_label = "Pasted Text"
+        metadata = {"format": requested_format}
+    else:
+        raise HTTPException(status_code=400, detail="source_type must be 'web' or 'text'.")
+
+    success_count = _index_chunks(doc_title, source_label, text, metadata)
+    return {
+        "success": True,
+        "message": f"Indexed {doc_title} into {success_count} searchable chunks.",
+        "chunks_count": success_count
+    }
+
+
 @router.post("/api/rag/ingest/file")
-async def ingest_file(file: UploadFile = File(...)):
+async def ingest_file(file: UploadFile = File(...), file_format: str = Form("auto")):
     try:
         content = await file.read()
-        text_content = content.decode("utf-8", errors="ignore")
-        
-        paragraphs = [p.strip() for p in text_content.split("\n\n") if p.strip()]
-        
-        chunks = []
-        current_chunk = ""
-        for p in paragraphs:
-            if len(current_chunk) + len(p) < 1000:
-                current_chunk += "\n\n" + p if current_chunk else p
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = p
-        if current_chunk:
-            chunks.append(current_chunk)
-            
-        if not chunks:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            
-        success_count = 0
-        for i, chunk in enumerate(chunks):
-            title = f"{file.filename} (Chunk {i+1}/{len(chunks)})" if len(chunks) > 1 else file.filename
-            meta = {
-                "filename": file.filename,
-                "chunk_index": i,
-                "total_chunks": len(chunks),
-                "ingested_at": str(datetime.now())
-            }
-            success = db.add_rag_document(
-                title=title,
-                source_type="Uploaded File",
-                content=chunk,
-                metadata=meta
-            )
-            if success:
-                success_count += 1
+        text_content, detected_format = _extract_text_from_bytes(file.filename, content, file_format)
+        success_count = _index_chunks(
+            file.filename,
+            f"Uploaded {detected_format}",
+            text_content,
+            {"filename": file.filename, "format": detected_format}
+        )
                 
         return {
             "success": True,
             "message": f"Successfully uploaded and indexed '{file.filename}' into {success_count} search chunks.",
             "chunks_count": success_count
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to ingest file: {str(e)}")
+
+
+@router.post("/api/rag/ingest/batch")
+async def ingest_batch(
+    urls: str = Form(""),
+    file_format: str = Form("auto"),
+    crawl_depth: int = Form(0),
+    max_pages: int = Form(10),
+    files: list[UploadFile] = File(default=[])
+):
+    url_list = [item.strip() for item in re.split(r"[\n,]+", urls or "") if item.strip()]
+    if not url_list and not files:
+        raise HTTPException(status_code=400, detail="Add at least one URL or one file.")
+
+    results = []
+    total_chunks = 0
+    total_pages = 0
+    page_cap = _clamp_int(max_pages, 1, 25, 10)
+
+    for url in url_list:
+        remaining_pages = page_cap - total_pages
+        if remaining_pages <= 0:
+            results.append({"source": url, "type": "web", "success": False, "error": f"Skipped because the batch page cap of {page_cap} was reached."})
+            continue
+        try:
+            crawl_result = await _index_crawled_site(
+                url,
+                "Batch Web Page" if not crawl_depth else "Batch Crawled Web Page",
+                "",
+                crawl_depth,
+                remaining_pages,
+                batch=True
+            )
+            total_chunks += crawl_result["chunks"]
+            total_pages += crawl_result["pages"]
+            results.append({
+                "source": url,
+                "type": "web",
+                "success": True,
+                "chunks": crawl_result["chunks"],
+                "pages": crawl_result["pages"],
+                "title": crawl_result["titles"][0] if crawl_result["titles"] else url,
+                "failures": crawl_result["failures"]
+            })
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            results.append({"source": url, "type": "web", "success": False, "error": str(detail)})
+
+    for file in files:
+        try:
+            content = await file.read()
+            text_content, detected_format = _extract_text_from_bytes(file.filename, content, file_format)
+            chunks = _index_chunks(
+                file.filename,
+                f"Batch Uploaded {detected_format}",
+                text_content,
+                {"filename": file.filename, "format": detected_format, "batch": True}
+            )
+            total_chunks += chunks
+            results.append({"source": file.filename, "type": "file", "success": True, "chunks": chunks, "format": detected_format})
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            results.append({"source": file.filename, "type": "file", "success": False, "error": str(detail)})
+
+    success_count = len([row for row in results if row["success"]])
+    failure_count = len(results) - success_count
+    return {
+        "success": success_count > 0,
+        "message": f"Batch indexed {success_count} sources into {total_chunks} chunks. {failure_count} failed.",
+        "source_count": len(results),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "chunks_count": total_chunks,
+        "pages_count": total_pages,
+        "max_pages": page_cap,
+        "results": results
+    }
 
 @router.get("/api/rag/documents")
 async def get_rag_documents():

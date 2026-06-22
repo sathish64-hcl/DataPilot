@@ -1,17 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   MessageSquare, Terminal, Database, ShieldAlert, DollarSign, 
   GitBranch, ShieldCheck, HelpCircle, AlertTriangle, Play, 
   RefreshCw, Layers, Copy, Check, Info, Server, Wifi, 
-  Search, AlertCircle, Sparkles, Send, Settings, User, Key, ChevronRight
+  AlertCircle, Sparkles, Send, Settings, User, Key, Activity, Table
 } from 'lucide-react';
 import './App.css';
 
 const API_BASE = 'http://localhost:8000';
 
 
-function SearchableSelect({ value, onChange, options, placeholder, label }) {
+function SearchableSelect({ value, onChange, options, placeholder, label, className = '' }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const triggerRef = useRef(null);
@@ -20,7 +20,10 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
   const updatePos = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      const DROPDOWN_WIDTH = Math.max(rect.width, 280);
+      const isWorkbenchSelect = className.includes('workbench');
+      const DROPDOWN_WIDTH = isWorkbenchSelect
+        ? Math.min(Math.max(rect.width, 340), 560)
+        : Math.max(rect.width, 280);
       const viewportWidth = window.innerWidth;
 
       // If dropdown would overflow right edge, align to the RIGHT of the trigger instead
@@ -49,7 +52,7 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
   const portalRoot = document.getElementById('dropdown-portal') || document.body;
 
   return (
-    <div className="searchable-select-container">
+    <div className={`searchable-select-container ${className}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>{label}:</span>
         <div
@@ -92,7 +95,7 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
               display: 'flex',
               flexDirection: 'column',
               gap: '6px',
-              maxHeight: `calc(100vh - ${dropdownPos.top + 16}px)`,
+              maxHeight: `${Math.min(360, Math.max(180, window.innerHeight - dropdownPos.top - 16))}px`,
               overflow: 'hidden'
             }}
             onClick={e => e.stopPropagation()}
@@ -119,8 +122,10 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
               <div
                 onClick={() => { onChange(''); close(); }}
                 style={{
-                  padding: '7px 10px',
+                  padding: '9px 12px',
                   fontSize: '12px',
+                  lineHeight: '18px',
+                  minHeight: '36px',
                   borderRadius: '5px',
                   cursor: 'pointer',
                   color: value === '' ? '#00b4ff' : 'rgba(255,255,255,0.5)',
@@ -128,7 +133,9 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
                   fontWeight: value === '' ? 600 : 400,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
-                  textOverflow: 'ellipsis'
+                  textOverflow: 'ellipsis',
+                  display: 'flex',
+                  alignItems: 'center'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
                 onMouseLeave={e => e.currentTarget.style.background = value === '' ? 'rgba(0,149,255,0.1)' : 'transparent'}
@@ -140,8 +147,10 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
                   key={idx}
                   onClick={() => { onChange(opt); close(); }}
                   style={{
-                    padding: '7px 10px',
+                    padding: '9px 12px',
                     fontSize: '12px',
+                    lineHeight: '18px',
+                    minHeight: '36px',
                     borderRadius: '5px',
                     cursor: 'pointer',
                     color: value === opt ? '#00b4ff' : '#c8d0e0',
@@ -149,7 +158,9 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
                     fontWeight: value === opt ? 600 : 400,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis'
+                    textOverflow: 'ellipsis',
+                    display: 'flex',
+                    alignItems: 'center'
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
                   onMouseLeave={e => e.currentTarget.style.background = value === opt ? 'rgba(0,149,255,0.12)' : 'transparent'}
@@ -172,8 +183,18 @@ function SearchableSelect({ value, onChange, options, placeholder, label }) {
 }
 
 function App() {
+  const toDateInput = (date) => date.toISOString().slice(0, 10);
+  const getRelativeCostRange = (days) => {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - (Number(days) || 30) + 1);
+    return { start: toDateInput(start), end: toDateInput(end) };
+  };
+  const defaultCostRange = getRelativeCostRange(30);
+
   const [activeTab, setActiveTab] = useState('chat');
   const [connectionModalOpen, setConnectionModalOpen] = useState(false);
+  const [helpTipsOpen, setHelpTipsOpen] = useState(false);
   const [activeType, setActiveType] = useState('ALL');
   const [connectionConfig, setConnectionConfig] = useState({
     platform: 'SNOWFLAKE',
@@ -260,7 +281,7 @@ function App() {
     }
   };
 
-  const loadDatabases = async () => {
+  async function loadDatabases() {
     try {
       const res = await fetch(`${API_BASE}/api/databases`);
       const data = await res.json();
@@ -269,7 +290,7 @@ function App() {
       let defaultDb = '';
       let defaultSchema = '';
       if (dbs.length > 0) {
-        defaultDb = dbs.includes('DEMO_DB') ? 'DEMO_DB' : dbs[0];
+        defaultDb = dbs.find(dbName => dbName !== 'DEMO_DB') || dbs[0];
         setActiveDb(defaultDb);
         const schemasRes = await fetch(`${API_BASE}/api/schemas?database=${defaultDb}`);
         const schemasData = await schemasRes.json();
@@ -280,6 +301,7 @@ function App() {
           setActiveSchema(defaultSchema);
           await loadTables(defaultDb, defaultSchema, activeType);
         }
+        await syncWorkbenchContext(defaultDb, defaultSchema);
       }
       await loadRoles();
       await loadWarehouses();
@@ -289,28 +311,7 @@ function App() {
     } catch (err) {
       console.error('Error fetching databases:', err);
     }
-  };
-
-  const loadSchemas = async (dbName) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/schemas?database=${dbName}`);
-      const data = await res.json();
-      const schs = data.schemas || [];
-      setSchemas(schs);
-      if (schs.length > 0) {
-        let defaultSch = schs.includes('PUBLIC') ? 'PUBLIC' : schs[0];
-        setActiveSchema(defaultSch);
-        await loadTables(dbName, defaultSch, activeType);
-      } else {
-        setSchemas([]);
-        setTables([]);
-        setActiveSchema('');
-        setActiveTable('');
-      }
-    } catch (err) {
-      console.error('Error fetching schemas:', err);
-    }
-  };
+  }
 
   const loadTables = async (dbName, schemaName, tableType = null) => {
     try {
@@ -368,6 +369,7 @@ function App() {
       await fetchMetadata('', dbName, defaultSch || null);
       await fetchGovernance(dbName);
       await loadChatSamples(dbName, defaultSch || null);
+      await syncWorkbenchContext(dbName, defaultSch || '');
     } catch (err) {
       console.error('Error in handleDbChange:', err);
     }
@@ -387,6 +389,7 @@ function App() {
     await loadTables(activeDb, schemaName, activeType);
     await fetchMetadata('', activeDb, schemaName);
     await loadChatSamples(activeDb, schemaName);
+    await syncWorkbenchContext(activeDb, schemaName);
   };
 
   // State for Chat Copilot
@@ -400,14 +403,35 @@ function App() {
   const [currentMessage, setCurrentMessage] = useState('');
   const [executingChatQuery, setExecutingChatQuery] = useState(false);
   const [chatResults, setChatResults] = useState(null);
-  const [chatSqlExecuting, setChatSqlExecuting] = useState('');
+  const [analystStudioTab, setAnalystStudioTab] = useState('chat');
+  const [askDatasetQuestion, setAskDatasetQuestion] = useState('');
+  const [askDatasetSql, setAskDatasetSql] = useState('');
+  const [askDatasetExplanation, setAskDatasetExplanation] = useState('');
+  const [askDatasetResult, setAskDatasetResult] = useState(null);
+  const [askDatasetTitle, setAskDatasetTitle] = useState('Dataset Answer');
+  const [askDatasetChartType, setAskDatasetChartType] = useState('auto');
+  const [askDatasetLoading, setAskDatasetLoading] = useState(false);
+  const [reportPrompt, setReportPrompt] = useState('');
+  const [reportTitle, setReportTitle] = useState('Untitled Report');
+  const [reportSql, setReportSql] = useState('');
+  const [reportData, setReportData] = useState(null);
+  const [reportChartType, setReportChartType] = useState('auto');
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [sqlRowLimit, setSqlRowLimit] = useState(100);
+  const [workbenchSqlResults, setWorkbenchSqlResults] = useState(null);
+  const [workbenchSqlTitle, setWorkbenchSqlTitle] = useState('');
+  const [workbenchSqlExecuting, setWorkbenchSqlExecuting] = useState(false);
+  const [inlineSqlResults, setInlineSqlResults] = useState({});
+  const [inlineSqlExecuting, setInlineSqlExecuting] = useState({});
 
   // State for SQL Optimizer
   const [sqlQuery, setSqlQuery] = useState(
     'SELECT * FROM LINEITEM l\nJOIN ORDERS o ON l.order_id = o.order_id\nWHERE o.order_date > \'2023-01-01\';'
   );
   const [sqlOptimization, setSqlOptimization] = useState(null);
+  const [sqlCostAdvisor, setSqlCostAdvisor] = useState(null);
   const [optimizing, setOptimizing] = useState(false);
+  const [analyzingCost, setAnalyzingCost] = useState(false);
 
   // State for Metadata Discovery
   const [metadataSearch, setMetadataSearch] = useState('');
@@ -424,12 +448,15 @@ function App() {
   // State for Cost Dashboard
   const [costData, setCostData] = useState(null);
   const [loadingCost, setLoadingCost] = useState(false);
+  const [costChartMode, setCostChartMode] = useState('trend');
+  const [costQueryFilter, setCostQueryFilter] = useState('all');
+  const [costDateRange, setCostDateRange] = useState(30);
+  const [costStartDate, setCostStartDate] = useState(defaultCostRange.start);
+  const [costEndDate, setCostEndDate] = useState(defaultCostRange.end);
 
   // State for Lineage & Impact
-  const [lineageData, setLineageData] = useState(null);
   const [impactSearch, setImpactSearch] = useState('CUSTOMER');
   const [impactResult, setImpactResult] = useState(null);
-  const [loadingLineage, setLoadingLineage] = useState(false);
   const [selectedLineageNode, setSelectedLineageNode] = useState(null);
 
   // State for Data Quality
@@ -443,20 +470,86 @@ function App() {
   const [ragDocuments, setRagDocuments] = useState([]);
   const [rssUrl, setRssUrl] = useState('');
   const [rssSourceName, setRssSourceName] = useState('');
+  const [documentSourceMode, setDocumentSourceMode] = useState('web');
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [documentUrl, setDocumentUrl] = useState('');
+  const [documentText, setDocumentText] = useState('');
+  const [documentFormat, setDocumentFormat] = useState('auto');
+  const [crawlDepth, setCrawlDepth] = useState(0);
+  const [crawlMaxPages, setCrawlMaxPages] = useState(10);
+  const [documentIngestStatus, setDocumentIngestStatus] = useState('');
+  const [ingestingDocument, setIngestingDocument] = useState(false);
+  const [batchUrls, setBatchUrls] = useState('');
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [batchIngestStatus, setBatchIngestStatus] = useState('');
+  const [batchIngestResult, setBatchIngestResult] = useState(null);
+  const [ingestingBatch, setIngestingBatch] = useState(false);
   const [ingestingFeed, setIngestingFeed] = useState(false);
   const [feedIngestStatus, setFeedIngestStatus] = useState('');
   const [uploadingFile, setUploadingFile] = useState(false);
   const [fileUploadStatus, setFileUploadStatus] = useState('');
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const batchFileInputRef = useRef(null);
   const [roles, setRoles] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [activeRole, setActiveRole] = useState('');
   const [activeWarehouse, setActiveWarehouse] = useState('');
 
+  const defaultWorkbenchScope = { database: '', schema: '', type: 'TABLE', table: '', column: '' };
+  const [appScopes, setAppScopes] = useState({
+    tableDetails: { ...defaultWorkbenchScope },
+    profiler: { ...defaultWorkbenchScope },
+    search: { ...defaultWorkbenchScope, query: '', dataType: '', tableFilter: '' },
+    anomaly: { ...defaultWorkbenchScope },
+    freshness: { ...defaultWorkbenchScope, table: '', frequency: '', expectedFrequency: 'daily', customHours: 24 }
+  });
+  const [appOptions, setAppOptions] = useState({
+    tableDetails: { schemas: [], tables: [], columns: [], columnDetails: [] },
+    profiler: { schemas: [], tables: [], columns: [], columnDetails: [] },
+    search: { schemas: [], tables: [], columns: [], columnDetails: [] },
+    anomaly: { schemas: [], tables: [], columns: [], columnDetails: [] },
+    freshness: { schemas: [], tables: [], columns: [], columnDetails: [] }
+  });
+  const [tableDetailsTab, setTableDetailsTab] = useState('overview');
+  const [tableDetailsData, setTableDetailsData] = useState(null);
+  const [profilerData, setProfilerData] = useState(null);
+  const [profilerVolumePlot, setProfilerVolumePlot] = useState('daily');
+  const [volumeAnalyzerColumn, setVolumeAnalyzerColumn] = useState('');
+  const [volumeAnalyzerMode, setVolumeAnalyzerMode] = useState('event');
+  const [volumeAnalyzerTimeWindow, setVolumeAnalyzerTimeWindow] = useState('24h');
+  const [volumeAnalyzerGranularity, setVolumeAnalyzerGranularity] = useState('hour');
+  const [volumeAnalyzerChartType, setVolumeAnalyzerChartType] = useState('bar');
+  const [volumeAnalyzerHeatmapType, setVolumeAnalyzerHeatmapType] = useState('heatmap');
+  const [volumeAnalyzerData, setVolumeAnalyzerData] = useState(null);
+  const [tableInsightsData, setTableInsightsData] = useState(null);
+  const [searchTableResults, setSearchTableResults] = useState([]);
+  const [searchColumnResults, setSearchColumnResults] = useState([]);
+  const [anomalyTab, setAnomalyTab] = useState('scan');
+  const [anomalyData, setAnomalyData] = useState(null);
+  const [anomalyPlotType, setAnomalyPlotType] = useState('auto');
+  const [customAnomalyRule, setCustomAnomalyRule] = useState({
+    name: 'Custom anomaly rule',
+    type: 'is_null',
+    value: '',
+    secondValue: '',
+    customWhere: ''
+  });
+  const [freshnessData, setFreshnessData] = useState(null);
+  const [workbenchQueryLog, setWorkbenchQueryLog] = useState([]);
+  const [workbenchLoading, setWorkbenchLoading] = useState({
+    tableDetails: false,
+    profiler: false,
+    volumeAnalyzer: false,
+    insights: false,
+    search: false,
+    anomaly: false,
+    freshness: false,
+    queryLog: false
+  });
+
   // State for Incident Investigator
   const [incidentsList, setIncidentsList] = useState([]);
-  const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [incidentInvestigation, setIncidentInvestigation] = useState(null);
   const [investigatingIncident, setInvestigatingIncident] = useState(false);
@@ -470,7 +563,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const loadChatSamples = async (dbName, schemaName, tableName) => {
+  async function loadChatSamples(dbName, schemaName, tableName) {
     try {
       const params = new URLSearchParams();
       if (dbName) params.append('database', dbName);
@@ -490,7 +583,7 @@ function App() {
     } catch (err) {
       console.error('Error fetching chat samples:', err);
     }
-  };
+  }
 
   useEffect(() => {
     // Initial data load
@@ -500,6 +593,7 @@ function App() {
     fetchDqDashboard();
     fetchIncidents();
     fetchRagDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCopy = (text) => {
@@ -544,7 +638,7 @@ function App() {
           });
         }
       }
-    } catch (err) {
+    } catch {
       setConnectionStatus({
         status: 'disconnected',
         message: 'Could not connect to FastAPI server. Ensure backend is running.',
@@ -590,7 +684,7 @@ function App() {
         };
         return updated;
       });
-    } catch (err) {
+    } catch {
       setChatMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
@@ -603,49 +697,256 @@ function App() {
     }
   };
 
-  // Execute Generated SQL from Chat Bubble
-  const handleExecuteChatSql = async (sqlString) => {
-    setExecutingChatQuery(true);
-    setChatSqlExecuting(sqlString);
-    setChatResults(null);
+  const inferReportChart = (result) => {
+    const columns = result?.columns || [];
+    const rows = result?.data || [];
+    if (!columns.length || !rows.length) return { type: 'none' };
+    const numericCols = columns.filter(col => rows.some(row => Number.isFinite(Number(row[col]))));
+    const labelCols = columns.filter(col => !numericCols.includes(col));
+    if (!numericCols.length) return { type: 'none' };
+    const x = labelCols[0] || columns.find(col => col !== numericCols[0]) || columns[0];
+    const y = numericCols[0];
+    const loweredX = String(x).toLowerCase();
+    const type = loweredX.includes('date') || loweredX.includes('month') || loweredX.includes('time') ? 'line' : 'bar';
+    return { type, x, y };
+  };
+
+  const renderReportChart = () => {
+    if (!reportData?.success) return null;
+    const inferred = inferReportChart(reportData);
+    const chartType = reportChartType === 'auto' ? inferred.type : reportChartType;
+    if (chartType === 'none' || !inferred.x || !inferred.y) {
+      return <div className="empty-state">No numeric column was found for charting this result set.</div>;
+    }
+    if (chartType === 'line') return renderReportLineChart(reportData.data, inferred.x, inferred.y);
+    return renderReportBarChart(reportData.data, inferred.x, inferred.y);
+  };
+
+  const buildDatasetInsightSummary = (result, question) => {
+    if (!result?.success) return 'No successful result set is available yet.';
+    const rows = result.data || [];
+    const columns = result.columns || [];
+    if (!rows.length || !columns.length) {
+      return 'The generated query ran successfully but returned no rows for this dataset context.';
+    }
+    const numericCols = columns.filter(col => rows.some(row => Number.isFinite(Number(row[col]))));
+    const labelCols = columns.filter(col => !numericCols.includes(col));
+    const parts = [`Returned ${rows.length} rows across ${columns.length} columns for: "${question}".`];
+    if (numericCols.length) {
+      const metric = numericCols[0];
+      const values = rows.map(row => Number(row[metric])).filter(Number.isFinite);
+      const total = values.reduce((sum, value) => sum + value, 0);
+      const avg = values.length ? total / values.length : 0;
+      parts.push(`${metric} totals ${total.toLocaleString(undefined, { maximumFractionDigits: 2 })} with an average of ${avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}.`);
+      if (labelCols.length) {
+        const label = labelCols[0];
+        const topRow = [...rows].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0))[0];
+        if (topRow) parts.push(`${topRow[label]} is the top ${label} by ${metric}.`);
+      }
+    } else {
+      parts.push('The result is descriptive rather than numeric, so review the returned categories and sample rows.');
+    }
+    return parts.join(' ');
+  };
+
+  const renderAskDatasetChart = () => {
+    if (!askDatasetResult?.success) return null;
+    const inferred = inferReportChart(askDatasetResult);
+    const chartType = askDatasetChartType === 'auto' ? inferred.type : askDatasetChartType;
+    if (chartType === 'none' || !inferred.x || !inferred.y) {
+      return <div className="empty-state">No numeric field was found for an automatic chart.</div>;
+    }
+    if (chartType === 'line') return renderReportLineChart(askDatasetResult.data, inferred.x, inferred.y);
+    return renderReportBarChart(askDatasetResult.data, inferred.x, inferred.y);
+  };
+
+  const handleAskDataset = async (e) => {
+    e?.preventDefault();
+    if (!askDatasetQuestion.trim()) return;
+    setAskDatasetLoading(true);
+    setAskDatasetSql('');
+    setAskDatasetExplanation('');
+    setAskDatasetResult(null);
     try {
-      const res = await fetch(`${API_BASE}/api/execute-sql`, {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: sqlString })
+        body: JSON.stringify({
+          message: `${askDatasetQuestion}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain English.`,
+          database: activeDb,
+          schema_name: activeSchema,
+          table_name: activeTable || null
+        })
       });
-      const data = await res.json();
-      if (data.success) {
-        setChatResults(data);
-      } else {
-        setChatResults({ success: false, error: data.error });
+      const generated = await res.json();
+      if (!generated.sql) {
+        setAskDatasetResult({ success: false, error: generated.reply || 'AI did not return SQL for this dataset question.' });
+        return;
       }
+      setAskDatasetSql(generated.sql);
+      setAskDatasetExplanation(generated.reply || 'The generated SQL answers the selected dataset question using the current database context.');
+      setAskDatasetTitle(askDatasetQuestion.slice(0, 80) || 'Dataset Answer');
+      setAskDatasetResult(await executeSqlWithLimit(generated.sql));
     } catch (err) {
-      setChatResults({ success: false, error: 'Network communication failure with uvicorn server.' });
+      setAskDatasetResult({ success: false, error: err.message || 'Failed to ask this dataset.' });
+    } finally {
+      setAskDatasetLoading(false);
+    }
+  };
+
+  const handleRunAskDatasetSql = async () => {
+    if (!askDatasetSql.trim()) return;
+    setAskDatasetLoading(true);
+    try {
+      setAskDatasetResult(await executeSqlWithLimit(askDatasetSql));
+    } catch (err) {
+      setAskDatasetResult({ success: false, error: err.message || 'Failed to run generated SQL.' });
+    } finally {
+      setAskDatasetLoading(false);
+    }
+  };
+
+  const handleBuildReport = async (e) => {
+    e?.preventDefault();
+    if (!reportPrompt.trim()) return;
+
+    setReportGenerating(true);
+    setReportData(null);
+    setReportSql('');
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${reportPrompt}\nReturn SQL suitable for a dashboard/report. Prefer grouped metrics and concise result sets.`,
+          database: activeDb,
+          schema_name: activeSchema,
+          table_name: activeTable || null
+        })
+      });
+      const generated = await res.json();
+      if (!generated.sql) {
+        setReportData({ success: false, error: generated.reply || 'AI did not return SQL for this report.' });
+        return;
+      }
+      setReportSql(generated.sql);
+      const executed = await executeSqlWithLimit(generated.sql);
+      setReportData(executed);
+      setReportTitle(reportPrompt.slice(0, 72) || 'Generated Report');
+    } catch (err) {
+      setReportData({ success: false, error: err.message || 'Failed to generate report.' });
+    } finally {
+      setReportGenerating(false);
+    }
+  };
+
+  const handleRunReportSql = async () => {
+    if (!reportSql.trim()) return;
+    setReportGenerating(true);
+    setReportData(null);
+    try {
+      setReportData(await executeSqlWithLimit(reportSql));
+    } catch (err) {
+      setReportData({ success: false, error: err.message || 'Failed to run report SQL.' });
+    } finally {
+      setReportGenerating(false);
+    }
+  };
+
+  const executeSqlWithLimit = async (sqlString) => {
+    const res = await fetch(`${API_BASE}/api/execute-sql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: sqlString, limit: sqlRowLimit })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.detail || data.error || 'SQL execution failed.' };
+    }
+    return data;
+  };
+
+  const handleExecuteChatSql = async (sqlString, messageIndex = null) => {
+    setExecutingChatQuery(true);
+    setChatResults(null);
+    try {
+      const result = await executeSqlWithLimit(sqlString);
+      setChatResults(result);
+      if (messageIndex !== null) {
+        setChatMessages(prev => prev.map((msg, idx) => idx === messageIndex ? { ...msg, result } : msg));
+      }
+    } catch {
+      const result = { success: false, error: 'Network communication failure with uvicorn server.' };
+      setChatResults(result);
+      if (messageIndex !== null) {
+        setChatMessages(prev => prev.map((msg, idx) => idx === messageIndex ? { ...msg, result } : msg));
+      }
     }
     setExecutingChatQuery(false);
   };
 
+  const handleExecuteWorkbenchSql = async (sqlString, title = 'SQL Result', options = {}) => {
+    if (options.inlineKey) {
+      setWorkbenchSqlResults(null);
+      setWorkbenchSqlTitle('');
+      setInlineSqlExecuting(prev => ({ ...prev, [options.inlineKey]: true }));
+      setInlineSqlResults(prev => ({ ...prev, [options.inlineKey]: null }));
+      try {
+        const result = await executeSqlWithLimit(sqlString);
+        setInlineSqlResults(prev => ({ ...prev, [options.inlineKey]: result }));
+      } catch {
+        setInlineSqlResults(prev => ({
+          ...prev,
+          [options.inlineKey]: { success: false, error: 'Network communication failure with uvicorn server.' }
+        }));
+      }
+      setInlineSqlExecuting(prev => ({ ...prev, [options.inlineKey]: false }));
+      return;
+    }
+    setWorkbenchSqlExecuting(true);
+    setWorkbenchSqlTitle(title);
+    setWorkbenchSqlResults(null);
+    try {
+      setWorkbenchSqlResults(await executeSqlWithLimit(sqlString));
+    } catch {
+      setWorkbenchSqlResults({ success: false, error: 'Network communication failure with uvicorn server.' });
+    }
+    setWorkbenchSqlExecuting(false);
+  };
+
   // SQL Optimizer
-  const handleOptimizeSql = async () => {
+  const handleAnalyzeAndOptimizeSql = async () => {
+    if (!sqlQuery.trim()) return;
+    setAnalyzingCost(true);
     setOptimizing(true);
+    setSqlCostAdvisor(null);
     setSqlOptimization(null);
     try {
-      const res = await fetch(`${API_BASE}/api/sql/optimize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: sqlQuery })
-      });
-      const data = await res.json();
-      setSqlOptimization(data);
+      const [costRes, optimizeRes] = await Promise.all([
+        fetch(`${API_BASE}/api/sql/cost-advisor`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: sqlQuery })
+        }),
+        fetch(`${API_BASE}/api/sql/optimize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: sqlQuery })
+        })
+      ]);
+      const [costData, optimizeData] = await Promise.all([costRes.json(), optimizeRes.json()]);
+      setSqlCostAdvisor(costRes.ok ? costData : { success: false, error: costData.detail || costData.error || 'Cost advisor failed.' });
+      setSqlOptimization(optimizeRes.ok ? optimizeData : { explanation: optimizeData.detail || optimizeData.error || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
     } catch (err) {
-      console.error(err);
+      setSqlCostAdvisor({ success: false, error: err.message || 'Cost advisor failed.' });
+      setSqlOptimization({ explanation: err.message || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
     }
+    setAnalyzingCost(false);
     setOptimizing(false);
   };
 
   // Metadata operations
-  const fetchMetadata = async (searchVal = '', dbName = null, schemaName = null) => {
+  async function fetchMetadata(searchVal = '', dbName = null, schemaName = null) {
     setLoadingMetadata(true);
     try {
       const searchString = typeof searchVal === 'string' ? searchVal : '';
@@ -663,7 +964,7 @@ function App() {
       console.error(err);
     }
     setLoadingMetadata(false);
-  };
+  }
 
   const handleGenerateDataDict = async (table) => {
     setDataDictLoading(true);
@@ -718,7 +1019,7 @@ function App() {
   };
 
   // Governance fetch
-  const fetchGovernance = async (dbName = null) => {
+  async function fetchGovernance(dbName = null) {
     setLoadingGovernance(true);
     try {
       const targetDb = (dbName && typeof dbName === 'string') ? dbName : activeDb;
@@ -732,39 +1033,44 @@ function App() {
       console.error(err);
     }
     setLoadingGovernance(false);
-  };
+  }
 
   // Cost Dashboard fetch
-  const fetchCostDashboard = async () => {
+  async function fetchCostDashboard(range = costDateRange, startDate = costStartDate, endDate = costEndDate) {
     setLoadingCost(true);
     try {
-      const res = await fetch(`${API_BASE}/api/cost/dashboard`);
+      const params = new URLSearchParams({ days: String(range) });
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const res = await fetch(`${API_BASE}/api/cost/dashboard?${params.toString()}`);
       const data = await res.json();
-      setCostData(data);
+      if (!res.ok) {
+        setCostData({ success: false, error: data.detail || data.error || 'Failed to load Cost Analyzer data.' });
+      } else {
+        setCostData(data);
+      }
     } catch (err) {
       console.error(err);
+      setCostData({ success: false, error: err.message || 'Failed to load Cost Analyzer data.' });
     }
     setLoadingCost(false);
-  };
+  }
 
   // Lineage fetch
-  const fetchLineage = async () => {
-    setLoadingLineage(true);
+  async function fetchLineage() {
     try {
       const res = await fetch(`${API_BASE}/api/lineage?object_name=${impactSearch}`);
       const data = await res.json();
-      setLineageData(data);
       if (data.impact) {
         setImpactResult(data.impact);
       }
     } catch (err) {
       console.error(err);
     }
-    setLoadingLineage(false);
-  };
+  }
 
   // DQ Dashboard fetch
-  const fetchDqDashboard = async () => {
+  async function fetchDqDashboard() {
     setLoadingDq(true);
     try {
       const res = await fetch(`${API_BASE}/api/quality/dashboard`);
@@ -774,7 +1080,7 @@ function App() {
       console.error(err);
     }
     setLoadingDq(false);
-  };
+  }
 
   // RAG Search fetch
   const handleRagSearch = async (e) => {
@@ -791,13 +1097,91 @@ function App() {
     setLoadingRag(false);
   };
 
-  const fetchRagDocuments = async () => {
+  async function fetchRagDocuments() {
     try {
       const res = await fetch(`${API_BASE}/api/rag/documents`);
       const data = await res.json();
       setRagDocuments(data.documents || []);
     } catch (err) {
       console.error('Error fetching RAG documents:', err);
+    }
+  }
+
+  const handleIngestDocumentSource = async (e) => {
+    e.preventDefault();
+    const isWeb = documentSourceMode === 'web';
+    if (isWeb && !documentUrl.trim()) return;
+    if (!isWeb && !documentText.trim()) return;
+
+    setIngestingDocument(true);
+    setDocumentIngestStatus(isWeb ? 'Reading web page and indexing chunks...' : 'Indexing pasted content...');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/rag/ingest/source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_type: documentSourceMode,
+          title: documentTitle,
+          url: isWeb ? documentUrl : undefined,
+          content: isWeb ? undefined : documentText,
+          format: documentFormat,
+          crawl_depth: isWeb ? Number(crawlDepth) : 0,
+          max_pages: Number(crawlMaxPages)
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDocumentIngestStatus(`Success! ${data.message}`);
+        setDocumentTitle('');
+        setDocumentUrl('');
+        setDocumentText('');
+        fetchRagDocuments();
+      } else {
+        setDocumentIngestStatus(`Ingestion failed: ${data.detail || 'Could not learn the source.'}`);
+      }
+    } catch {
+      setDocumentIngestStatus('Network error connecting to document ingestion service.');
+    } finally {
+      setIngestingDocument(false);
+    }
+  };
+
+  const handleBatchIngest = async (e) => {
+    e.preventDefault();
+    if (!batchUrls.trim() && batchFiles.length === 0) return;
+
+    setIngestingBatch(true);
+    setBatchIngestStatus('Batch ingest is reading sources and indexing chunks...');
+    setBatchIngestResult(null);
+
+    const formData = new FormData();
+    formData.append('urls', batchUrls);
+    formData.append('file_format', documentFormat);
+    formData.append('crawl_depth', String(crawlDepth));
+    formData.append('max_pages', String(crawlMaxPages));
+    batchFiles.forEach(file => formData.append('files', file));
+
+    try {
+      const res = await fetch(`${API_BASE}/api/rag/ingest/batch`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBatchIngestStatus(`Success! ${data.message}`);
+        setBatchUrls('');
+        setBatchFiles([]);
+        if (batchFileInputRef.current) batchFileInputRef.current.value = '';
+        fetchRagDocuments();
+      } else {
+        setBatchIngestStatus(`Batch ingest failed: ${data.detail || data.message || 'No sources were indexed.'}`);
+      }
+      setBatchIngestResult(data);
+    } catch {
+      setBatchIngestStatus('Network error running batch ingest.');
+    } finally {
+      setIngestingBatch(false);
     }
   };
 
@@ -821,7 +1205,7 @@ function App() {
       } else {
         setFeedIngestStatus(`Ingestion failed: ${data.detail || 'Could not parse RSS URL.'}`);
       }
-    } catch (err) {
+    } catch {
       setFeedIngestStatus('Network error connecting to ingestion service.');
     } finally {
       setIngestingFeed(false);
@@ -836,6 +1220,7 @@ function App() {
     setFileUploadStatus('Uploading and indexing document chunks...');
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('file_format', documentFormat);
     
     try {
       const res = await fetch(`${API_BASE}/api/rag/ingest/file`, {
@@ -849,7 +1234,7 @@ function App() {
       } else {
         setFileUploadStatus(`Upload failed: ${data.detail || 'Error processing file.'}`);
       }
-    } catch (err) {
+    } catch {
       setFileUploadStatus('Network error uploading file.');
     } finally {
       setUploadingFile(false);
@@ -862,8 +1247,7 @@ function App() {
   };
 
   // Incident Investigation fetch
-  const fetchIncidents = async () => {
-    setLoadingIncidents(true);
+  async function fetchIncidents() {
     try {
       const res = await fetch(`${API_BASE}/api/incidents`);
       const data = await res.json();
@@ -871,8 +1255,7 @@ function App() {
     } catch (err) {
       console.error(err);
     }
-    setLoadingIncidents(false);
-  };
+  }
 
   const handleInvestigateIncident = async (inc) => {
     setSelectedIncident(inc);
@@ -888,10 +1271,1616 @@ function App() {
     setInvestigatingIncident(false);
   };
 
+  const patchWorkbenchScope = (appKey, patch) => {
+    setAppScopes(prev => ({
+      ...prev,
+      [appKey]: { ...prev[appKey], ...patch }
+    }));
+  };
+
+  const patchWorkbenchOptions = (appKey, patch) => {
+    setAppOptions(prev => ({
+      ...prev,
+      [appKey]: { ...prev[appKey], ...patch }
+    }));
+  };
+
+  const syncWorkbenchContext = async (databaseName, schemaName = '') => {
+    if (!databaseName) return;
+    const appKeys = ['tableDetails', 'search', 'anomaly', 'freshness'];
+    let schemaList = [];
+    try {
+      const schemaRes = await fetch(`${API_BASE}/api/schemas?database=${encodeURIComponent(databaseName)}`);
+      const schemaData = await schemaRes.json();
+      schemaList = schemaData.schemas || [];
+    } catch (err) {
+      console.error('Error syncing workbench schemas:', err);
+    }
+    const nextSchema = schemaName || (schemaList.includes('PUBLIC') ? 'PUBLIC' : schemaList[0] || '');
+    setAppScopes(prev => {
+      const next = { ...prev };
+      appKeys.forEach(appKey => {
+        next[appKey] = {
+          ...next[appKey],
+          database: databaseName,
+          schema: nextSchema,
+          table: '',
+          column: ''
+        };
+      });
+      return next;
+    });
+    setAppOptions(prev => {
+      const next = { ...prev };
+      appKeys.forEach(appKey => {
+        next[appKey] = {
+          ...next[appKey],
+          schemas: schemaList,
+          tables: [],
+          columns: [],
+          columnDetails: []
+        };
+      });
+      return next;
+    });
+    if (!nextSchema) return;
+    await Promise.all(appKeys.map(async (appKey) => {
+      const typeParam = appScopes[appKey]?.type || 'ALL';
+      try {
+        const tableRes = await fetch(`${API_BASE}/api/tables?database=${encodeURIComponent(databaseName)}&schema=${encodeURIComponent(nextSchema)}&table_type=${encodeURIComponent(typeParam)}`);
+        const tableData = await tableRes.json();
+        patchWorkbenchOptions(appKey, { tables: tableData.tables || [], columns: [], columnDetails: [] });
+      } catch (err) {
+        console.error(`Error syncing ${appKey} tables:`, err);
+      }
+    }));
+  };
+
+  const loadWorkbenchSchemas = async (appKey, databaseName) => {
+    patchWorkbenchScope(appKey, { database: databaseName, schema: '', table: '', column: '' });
+    patchWorkbenchOptions(appKey, { schemas: [], tables: [], columns: [], columnDetails: [] });
+    if (!databaseName) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/schemas?database=${encodeURIComponent(databaseName)}`);
+      const data = await res.json();
+      patchWorkbenchOptions(appKey, { schemas: data.schemas || [] });
+    } catch (err) {
+      console.error('Error loading app schemas:', err);
+    }
+  };
+
+  const loadWorkbenchTables = async (appKey, schemaName, tableType = null) => {
+    const scope = appScopes[appKey];
+    const typeParam = tableType || scope.type || 'ALL';
+    patchWorkbenchScope(appKey, { schema: schemaName, table: '', column: '', type: typeParam });
+    patchWorkbenchOptions(appKey, { tables: [], columns: [], columnDetails: [] });
+    if (!scope.database || !schemaName) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/tables?database=${encodeURIComponent(scope.database)}&schema=${encodeURIComponent(schemaName)}&table_type=${encodeURIComponent(typeParam)}`);
+      const data = await res.json();
+      patchWorkbenchOptions(appKey, { tables: data.tables || [] });
+    } catch (err) {
+      console.error('Error loading app tables:', err);
+    }
+  };
+
+  const loadWorkbenchTableDetails = async (appKey, tableName = null) => {
+    const scope = { ...appScopes[appKey], table: tableName || appScopes[appKey].table };
+    const tableChanged = tableName && tableName !== appScopes[appKey].table;
+    patchWorkbenchScope(appKey, { table: scope.table, column: '' });
+    patchWorkbenchOptions(appKey, { columns: [], columnDetails: [] });
+    if (appKey === 'tableDetails' && tableChanged) {
+      setProfilerData(null);
+      setTableInsightsData(null);
+      setVolumeAnalyzerData(null);
+      setVolumeAnalyzerColumn('');
+      setVolumeAnalyzerMode('event');
+      setVolumeAnalyzerTimeWindow('24h');
+      setVolumeAnalyzerGranularity('hour');
+      setVolumeAnalyzerChartType('bar');
+      setVolumeAnalyzerHeatmapType('heatmap');
+      setProfilerVolumePlot('daily');
+    }
+    if (!scope.database || !scope.schema || !scope.table) return null;
+    const params = new URLSearchParams({ database: scope.database, schema: scope.schema, table: scope.table });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/table-details?${params.toString()}`);
+      const data = await res.json();
+      const columnNames = (data.columns || []).map(col => col.COLUMN_NAME);
+      patchWorkbenchOptions(appKey, { columns: columnNames, columnDetails: data.columns || [] });
+      if (appKey === 'tableDetails') setTableDetailsData(data);
+      return data;
+    } catch (err) {
+      console.error('Error loading table details:', err);
+      return null;
+    }
+  };
+
+  const setWorkbenchTable = async (appKey, tableName) => {
+    if (appKey === 'tableDetails') {
+      setWorkbenchLoading(prev => ({ ...prev, tableDetails: true }));
+      await loadWorkbenchTableDetails(appKey, tableName);
+      setWorkbenchLoading(prev => ({ ...prev, tableDetails: false }));
+    } else if (appKey === 'anomaly' || appKey === 'freshness') {
+      await loadWorkbenchTableDetails(appKey, tableName);
+    } else {
+      patchWorkbenchScope(appKey, { table: tableName, column: '' });
+    }
+  };
+
+  const runTableDetails = async () => {
+    setWorkbenchLoading(prev => ({ ...prev, tableDetails: true }));
+    await loadWorkbenchTableDetails('tableDetails');
+    setWorkbenchLoading(prev => ({ ...prev, tableDetails: false }));
+  };
+
+  const runProfiler = async () => {
+    const scope = appScopes.tableDetails;
+    if (!scope.database || !scope.schema || !scope.table) return;
+    setWorkbenchLoading(prev => ({ ...prev, profiler: true }));
+    const params = new URLSearchParams({ database: scope.database, schema: scope.schema, table: scope.table });
+    try {
+      if (!tableDetailsData) {
+        await loadWorkbenchTableDetails('tableDetails');
+      }
+      const res = await fetch(`${API_BASE}/api/workbench/profile?${params.toString()}`);
+      setProfilerData(await res.json());
+    } catch (err) {
+      console.error('Error running profiler:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, profiler: false }));
+  };
+
+  const runTableInsights = async () => {
+    const scope = appScopes.tableDetails;
+    if (!scope.database || !scope.schema || !scope.table) return;
+    setWorkbenchLoading(prev => ({ ...prev, insights: true }));
+    const params = new URLSearchParams({ database: scope.database, schema: scope.schema, table: scope.table });
+    try {
+      if (!tableDetailsData) {
+        await loadWorkbenchTableDetails('tableDetails');
+      }
+      const res = await fetch(`${API_BASE}/api/workbench/insights?${params.toString()}`);
+      setTableInsightsData(await res.json());
+    } catch (err) {
+      console.error('Error generating table insights:', err);
+      setTableInsightsData({ insights: [], error: err.message || 'Insight generation failed.' });
+    }
+    setWorkbenchLoading(prev => ({ ...prev, insights: false }));
+  };
+
+  const getTableDateColumns = () => (
+    tableDetailsData?.columns || []
+  ).filter(col => {
+    const dataType = String(col.DATA_TYPE || '').toUpperCase();
+    return dataType.includes('DATE') || dataType.includes('TIME');
+  }).map(col => col.COLUMN_NAME);
+
+  const getWorkbenchDateColumns = (appKey) => (
+    appOptions[appKey]?.columnDetails || []
+  ).filter(col => {
+    const dataType = String(col.DATA_TYPE || '').toUpperCase();
+    return dataType.includes('DATE') || dataType.includes('TIME');
+  }).map(col => col.COLUMN_NAME);
+
+  const handleVolumeAnalyzerModeChange = (mode) => {
+    setVolumeAnalyzerMode(mode);
+    setVolumeAnalyzerData(null);
+    if (mode === 'event') {
+      setVolumeAnalyzerTimeWindow('24h');
+      setVolumeAnalyzerGranularity('hour');
+    } else {
+      setVolumeAnalyzerTimeWindow('90d');
+      setVolumeAnalyzerGranularity('day');
+    }
+  };
+
+  const runVolumeAnalyzer = async () => {
+    const scope = appScopes.tableDetails;
+    const dateColumns = getTableDateColumns();
+    const selectedColumn = volumeAnalyzerColumn || dateColumns[0] || '';
+    if (!scope.database || !scope.schema || !scope.table || !selectedColumn) return;
+    setWorkbenchLoading(prev => ({ ...prev, volumeAnalyzer: true }));
+    const params = new URLSearchParams({
+      database: scope.database,
+      schema: scope.schema,
+      table: scope.table,
+      column: selectedColumn,
+      field_mode: volumeAnalyzerMode,
+      time_window: volumeAnalyzerTimeWindow,
+      granularity: volumeAnalyzerGranularity
+    });
+    try {
+      if (!tableDetailsData) {
+        await loadWorkbenchTableDetails('tableDetails');
+      }
+      setVolumeAnalyzerColumn(selectedColumn);
+      const res = await fetch(`${API_BASE}/api/workbench/volume-analyzer?${params.toString()}`);
+      setVolumeAnalyzerData(await res.json());
+    } catch (err) {
+      console.error('Error running volume analyzer:', err);
+      setVolumeAnalyzerData({ kind: 'date', summary: {}, rows: [], plot_data: { series: [] }, error: err.message || 'Volume analysis failed.' });
+    }
+    setWorkbenchLoading(prev => ({ ...prev, volumeAnalyzer: false }));
+  };
+
+  const runCatalogSearch = async () => {
+    const scope = appScopes.search;
+    setWorkbenchLoading(prev => ({ ...prev, search: true }));
+    const params = new URLSearchParams();
+    if (scope.database) params.append('database', scope.database);
+    if (scope.schema) params.append('schema', scope.schema);
+    if (scope.query) params.append('query', scope.query);
+    if (scope.dataType) params.append('data_type', scope.dataType);
+    if (scope.tableFilter) params.append('table_filter', scope.tableFilter);
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/search?${params.toString()}`);
+      const data = await res.json();
+      const fallbackResults = data.results || [];
+      setSearchTableResults(data.tables || []);
+      setSearchColumnResults(data.columns || fallbackResults);
+    } catch (err) {
+      console.error('Error running search:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, search: false }));
+  };
+
+  const runAnomaly = async () => {
+    const scope = appScopes.anomaly;
+    if (!scope.database || !scope.schema || !scope.table || !scope.column) return;
+    setWorkbenchLoading(prev => ({ ...prev, anomaly: true }));
+    setAnomalyPlotType('auto');
+    const params = new URLSearchParams({ database: scope.database, schema: scope.schema, table: scope.table, column: scope.column });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/anomaly?${params.toString()}`);
+      setAnomalyData(await res.json());
+    } catch (err) {
+      console.error('Error running anomaly detector:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, anomaly: false }));
+  };
+
+  const quoteSqlIdentifier = (value) => `"${String(value || '').replace(/"/g, '""')}"`;
+
+  const quoteSqlLiteral = (value) => `'${String(value ?? '').replace(/'/g, "''")}'`;
+
+  const getAnomalyTableRef = () => {
+    const scope = appScopes.anomaly;
+    if (!scope.database || !scope.schema || !scope.table) return '';
+    return `${quoteSqlIdentifier(scope.database)}.${quoteSqlIdentifier(scope.schema)}.${quoteSqlIdentifier(scope.table)}`;
+  };
+
+  const buildCustomAnomalyRuleSql = () => {
+    const scope = appScopes.anomaly;
+    const tableRef = getAnomalyTableRef();
+    if (!tableRef || (!scope.column && customAnomalyRule.type !== 'custom_where')) return '';
+    const col = quoteSqlIdentifier(scope.column);
+    const value = quoteSqlLiteral(customAnomalyRule.value);
+    const numericValue = customAnomalyRule.value || '0';
+    const numericSecondValue = customAnomalyRule.secondValue || '0';
+    const conditions = {
+      is_null: `${col} IS NULL`,
+      is_not_null: `${col} IS NOT NULL`,
+      equals: `${col} = ${value}`,
+      not_equals: `${col} <> ${value}`,
+      greater_than: `${col} > ${numericValue}`,
+      greater_or_equal: `${col} >= ${numericValue}`,
+      less_than: `${col} < ${numericValue}`,
+      less_or_equal: `${col} <= ${numericValue}`,
+      between: `${col} BETWEEN ${numericValue} AND ${numericSecondValue}`,
+      contains: `${col} ILIKE '%' || ${value} || '%'`,
+      not_contains: `(${col} IS NULL OR ${col} NOT ILIKE '%' || ${value} || '%')`,
+      starts_with: `${col} ILIKE ${quoteSqlLiteral(`${customAnomalyRule.value}%`)}`,
+      ends_with: `${col} ILIKE ${quoteSqlLiteral(`%${customAnomalyRule.value}`)}`,
+      regex: `REGEXP_LIKE(${col}, ${value})`,
+      custom_where: customAnomalyRule.customWhere.trim()
+    };
+    const condition = conditions[customAnomalyRule.type] || conditions.is_null;
+    if (!condition) return '';
+    return `SELECT *\nFROM ${tableRef}\nWHERE ${condition}\nLIMIT 100;`;
+  };
+
+  const getCustomRuleNeedsValue = () => !['is_null', 'is_not_null', 'custom_where'].includes(customAnomalyRule.type);
+
+  const getCustomRuleNeedsSecondValue = () => customAnomalyRule.type === 'between';
+
+  const runFreshness = async () => {
+    const scope = appScopes.freshness;
+    if (!scope.database || !scope.schema) return;
+    setWorkbenchLoading(prev => ({ ...prev, freshness: true }));
+    const params = new URLSearchParams({ database: scope.database, schema: scope.schema });
+    if (scope.table) params.append('table', scope.table);
+    if (scope.frequency) params.append('frequency', scope.frequency);
+    if (scope.expectedFrequency) params.append('expected_frequency', scope.expectedFrequency);
+    if (scope.expectedFrequency === 'custom') params.append('custom_hours', scope.customHours || 24);
+    if (scope.table) {
+      const dateColumns = getWorkbenchDateColumns('freshness');
+      const selectedDateColumn = scope.column || dateColumns[0] || '';
+      if (selectedDateColumn) params.append('date_column', selectedDateColumn);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/freshness?${params.toString()}`);
+      setFreshnessData(await res.json());
+      await loadWorkbenchQueryLog();
+    } catch (err) {
+      console.error('Error running freshness scan:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, freshness: false }));
+  };
+
+  const loadWorkbenchQueryLog = async () => {
+    setWorkbenchLoading(prev => ({ ...prev, queryLog: true }));
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/query-log`);
+      const data = await res.json();
+      setWorkbenchQueryLog(data.queries || []);
+    } catch (err) {
+      console.error('Error loading query log:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, queryLog: false }));
+  };
+
+  const clearWorkbenchQueryLog = async () => {
+    setWorkbenchLoading(prev => ({ ...prev, queryLog: true }));
+    try {
+      await fetch(`${API_BASE}/api/workbench/query-log/clear`, { method: 'POST' });
+      setWorkbenchQueryLog([]);
+    } catch (err) {
+      console.error('Error clearing query log:', err);
+    }
+    setWorkbenchLoading(prev => ({ ...prev, queryLog: false }));
+  };
+
+  const renderWorkbenchScope = (appKey, options = {}) => {
+    const scope = appScopes[appKey];
+    const optionSet = appOptions[appKey];
+    return (
+      <div className="app-scope-bar">
+        <SearchableSelect value={scope.database} onChange={(value) => loadWorkbenchSchemas(appKey, value)} options={databases} placeholder="Select Database" label="DB" className="workbench-select" />
+        <SearchableSelect value={scope.schema} onChange={(value) => loadWorkbenchTables(appKey, value)} options={optionSet.schemas} placeholder="Select Schema" label="SCHEMA" className="workbench-select" />
+        {options.includeType !== false && (
+          <SearchableSelect value={scope.type} onChange={(value) => loadWorkbenchTables(appKey, scope.schema, value)} options={['ALL', 'TABLE', 'VIEW']} placeholder="TABLE" label="TYPE" className="workbench-type-select" />
+        )}
+        {options.includeTable !== false && (
+          <SearchableSelect value={scope.table} onChange={(value) => setWorkbenchTable(appKey, value)} options={optionSet.tables} placeholder={options.tablePlaceholder || 'Select Table/View'} label="TABLE/VIEW" className="workbench-table-select" />
+        )}
+        {options.includeColumn && (
+          <SearchableSelect value={scope.column} onChange={(value) => patchWorkbenchScope(appKey, { column: value })} options={optionSet.columns} placeholder="Select Column" label="COLUMN" className="workbench-table-select" />
+        )}
+      </div>
+    );
+  };
+
+  const renderWorkbenchTabs = (tabs, active, onChange) => (
+    <div className="workbench-tabs">
+      {tabs.map(tab => (
+        <button key={tab.id} className={`workbench-tab ${active === tab.id ? 'active' : ''}`} onClick={() => onChange(tab.id)}>
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const getContextualTips = () => {
+    if (activeTab === 'chat') {
+      if (analystStudioTab === 'ask') {
+        return {
+          title: 'Ask Dataset Tips',
+          tips: [
+            'Select a table in the header when you want tighter SQL generation.',
+            'Ask for grouped, ranked, or trend answers to get better charts.',
+            'Use the row limit before running broad exploratory questions.',
+            'Review the generated SQL before re-running if the question touches large tables.'
+          ]
+        };
+      }
+      if (analystStudioTab === 'report') {
+        return {
+          title: 'Report Builder Tips',
+          tips: [
+            'Phrase prompts like a dashboard requirement: metric, dimension, and time grain.',
+            'Use grouped result sets for cleaner visualizations.',
+            'Regenerate when the SQL shape is wrong; Run SQL when the SQL is right.',
+            'Switch chart type only after confirming the result has a numeric measure.'
+          ]
+        };
+      }
+      return {
+        title: 'Chat Copilot Tips',
+        tips: [
+          'Pick DB, schema, and table first to improve generated SQL accuracy.',
+          'Ask one business question at a time for cleaner SQL.',
+          'Click Execute on generated SQL to populate the results console.',
+          'Use suggested questions as quick smoke tests for a selected table.'
+        ]
+      };
+    }
+
+    if (activeTab === 'sql') {
+      return {
+        title: 'SQL Tuning Tips',
+        tips: [
+          'Run Analyze Cost before executing broad SELECT or JOIN queries.',
+          'High-risk queries usually need filters, fewer columns, or pre-aggregation.',
+          'Use Optimize & Explain SQL for readability and performance rewrite ideas.',
+          'Cost estimates are directional; use Snowflake query history for exact executed cost.'
+        ]
+      };
+    }
+
+    if (activeTab === 'tableDetails') {
+      const tabLabel = {
+        overview: 'Overview',
+        details: 'Table Details',
+        profiler: 'Table Profiler',
+        volumeAnalyzer: 'Volume Analyzer',
+        insights: 'Insight Generator',
+        ddl: 'Generated DDL',
+        queries: 'Quick Queries'
+      }[tableDetailsTab] || 'Table Intelligence';
+      const tipsByTab = {
+        overview: [
+          'Use Overview to confirm the selected object before running heavier analysis.',
+          'Open Profiler for row counts, null rates, DQ checks, and volume plots.',
+          'Open Insights for KPI, trend, anomaly, correlation, and PII signals.'
+        ],
+        details: [
+          'Load Details refreshes metadata, samples, descriptions, DDL, and quick SQL.',
+          'Use sample rows to validate column meaning before asking AI questions.',
+          'AI descriptions are documentation-style; column labels are role classifications.'
+        ],
+        profiler: [
+          'Run Profile only when needed; it executes heavier stats queries.',
+          'High null and empty columns are early data quality warning signs.',
+          'Volume plots appear when the table has a date or timestamp column.'
+        ],
+        volumeAnalyzer: [
+          'Pick the date or timestamp field that represents table activity.',
+          'The analyzer flags unusual daily peaks and drops with a rolling MAD score.',
+          'Use the daily count SQL to validate the plotted pattern in Snowflake.'
+        ],
+        insights: [
+          'Generate Insights turns table structure and aggregates into analyst-style findings.',
+          'Use recommended SQL snippets to verify or deepen each insight.',
+          'PII signals are heuristic and should be reviewed before policy decisions.'
+        ],
+        ddl: [
+          'Use generated DDL to understand structure or recreate a table shell.',
+          'Check nullable and numeric precision details before migration work.'
+        ],
+        queries: [
+          'Quick Queries are executable starting points for common table checks.',
+          'Adjust row limit before executing broad sample queries.'
+        ]
+      };
+      return { title: `${tabLabel} Tips`, tips: tipsByTab[tableDetailsTab] || tipsByTab.overview };
+    }
+
+    if (activeTab === 'catalogSearch') {
+      return {
+        title: 'Catalog Search Tips',
+        tips: [
+          'Search partial table or column names when you do not know the exact object.',
+          'Use data type chips to narrow large schemas quickly.',
+          'Generate SELECT from a result when you want a fast starter query.'
+        ]
+      };
+    }
+
+    if (activeTab === 'anomaly') {
+      return {
+        title: anomalyTab === 'rules' ? 'Custom Rule Tips' : 'Anomaly Detector Tips',
+        tips: anomalyTab === 'rules' ? [
+          'Use custom rules for business constraints that statistics cannot infer.',
+          'Execute generated rule SQL to inspect affected rows.',
+          'Keep row limits modest when checking broad anomaly rules.'
+        ] : [
+          'Numeric scans use z-score style outlier detection.',
+          'Date scans look for unusual row-count movement over time.',
+          'Text scans highlight rare categories or values.'
+        ]
+      };
+    }
+
+    if (activeTab === 'freshness') {
+      return {
+        title: 'Data Freshness Tips',
+        tips: [
+          'Leave table empty to scan the schema, or choose one table for faster checks.',
+          'Use frequency filters to focus on daily, weekly, or monthly expectations.',
+          'Freshness depends on detecting a usable date or timestamp column.'
+        ]
+      };
+    }
+
+    if (activeTab === 'cost') {
+      return {
+        title: 'Cost Analyzer Tips',
+        tips: [
+          'Set a custom date range before comparing warehouse or user spend.',
+          'Query-level costs use cloud-services credits; warehouse totals use metering history.',
+          'Use scatter view to find long-running or unusually expensive queries.',
+          'Pair this page with SQL Cost Advisor before running new expensive SQL.'
+        ]
+      };
+    }
+
+    if (activeTab === 'rag') {
+      return {
+        title: 'Document Hub Tips',
+        tips: [
+          'Use batch ingest for multiple URLs or files that belong to the same topic.',
+          'Set crawl depth carefully; deeper crawls collect more pages and take longer.',
+          'Ask questions that mention the uploaded source or topic for better retrieval.',
+          'Use reset only when you intentionally want to clear the local knowledge base.'
+        ]
+      };
+    }
+
+    if (activeTab === 'queryLog') {
+      return {
+        title: 'Query Log Tips',
+        tips: [
+          'Use Query Log to replay SQL generated from chat, workbench, and insight tools.',
+          'Clean up the log when demo history becomes noisy.',
+          'Copy useful SQL into the SQL Tuning page for cost and optimization review.'
+        ]
+      };
+    }
+
+    return {
+      title: 'Data Pilot Tips',
+      tips: [
+        'Select role and warehouse once from the sidebar session context.',
+        'Use DB, schema, and table selectors before running AI or profiling workflows.',
+        'Review generated SQL before executing against large Snowflake objects.'
+      ]
+    };
+  };
+
+  const renderRowLimitSelect = () => (
+    <label className="row-limit-control">
+      <span>Rows</span>
+      <select value={sqlRowLimit} onChange={(e) => setSqlRowLimit(Number(e.target.value))}>
+        {[25, 50, 100, 250, 500, 1000].map(limit => (
+          <option key={limit} value={limit}>{limit}</option>
+        ))}
+      </select>
+    </label>
+  );
+
+  const contextualTips = getContextualTips();
+
+  const getInlineSqlKey = (sql, title = 'SQL Result') => `${title}::${sql}`;
+
+  const renderInlineSqlResult = (inlineKey) => {
+    if (!inlineKey) return null;
+    const result = inlineSqlResults[inlineKey];
+    const executing = inlineSqlExecuting[inlineKey];
+    if (!result && !executing) return null;
+    const previewRows = (result?.data || []).slice(0, 10);
+    return (
+      <div className="inline-sql-result">
+        {executing && <div className="empty-state">Executing query...</div>}
+        {result && !result.success && (
+          <div className="inline-sql-error">
+            <strong>Execution Error</strong>
+            <span>{result.error}</span>
+          </div>
+        )}
+        {result?.success && (
+          <>
+            <div className="inline-sql-result-header">
+              <span>{previewRows.length} preview rows</span>
+              <span>{result.row_count} returned | Limit {result.row_limit || sqlRowLimit}</span>
+            </div>
+            {previewRows.length > 0 ? (
+              <div className="table-container inline-sql-table">
+                <table className="custom-table">
+                  <thead>
+                    <tr>{result.columns?.map((col, idx) => <th key={idx}>{col}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, rIdx) => (
+                      <tr key={rIdx}>
+                        {result.columns?.map((col, cIdx) => (
+                          <td key={cIdx} title={String(row[col] ?? '')}>{String(row[col] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state">Query ran successfully and returned no rows.</div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderSqlActionButtons = (sql, title, options = {}) => {
+    const inlineKey = options.inline ? getInlineSqlKey(sql, title) : options.inlineKey;
+    const isExecuting = inlineKey ? inlineSqlExecuting[inlineKey] : workbenchSqlExecuting;
+    return (
+    <div className="sql-action-row">
+      {renderRowLimitSelect()}
+      <button className="btn btn-primary btn-small" onClick={() => handleExecuteWorkbenchSql(sql, title, inlineKey ? { inlineKey } : {})} disabled={isExecuting}>
+        <Play size={10} /> {isExecuting ? 'Running...' : 'Execute'}
+      </button>
+      <button className="btn btn-secondary btn-small" onClick={() => handleCopy(sql)}>
+        {copiedQuery === sql ? 'Copied!' : 'Copy'}
+      </button>
+    </div>
+    );
+  };
+
+  const renderSqlInlinePreview = (sql, title) => renderInlineSqlResult(getInlineSqlKey(sql, title));
+
+  const renderSqlResultsCard = () => {
+    if (!workbenchSqlResults && !workbenchSqlExecuting) return null;
+    return (
+      <div className="panel-body sql-results-panel">
+        <div className="glass-card">
+          <div className="glass-card-header">
+            <span className="glass-card-title"><Terminal size={16} /> {workbenchSqlTitle || 'SQL Results'}</span>
+            {renderRowLimitSelect()}
+          </div>
+          {workbenchSqlExecuting && <div className="empty-state">Executing SQL...</div>}
+          {workbenchSqlResults && !workbenchSqlResults.success && (
+            <div className="glass-card" style={{ borderColor: 'var(--accent-red)', backgroundColor: 'rgba(255,82,100,0.05)' }}>
+              <div style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: '13px', marginBottom: '8px' }}>Execution Error</div>
+              <div style={{ fontSize: '12px', fontFamily: 'var(--font-family-mono)', color: 'var(--text-secondary)' }}>{workbenchSqlResults.error}</div>
+            </div>
+          )}
+          {workbenchSqlResults?.success && (
+            <>
+              <div className="status-badge" style={{ marginBottom: '12px' }}>
+                {workbenchSqlResults.row_count} rows shown
+                {workbenchSqlResults.total_row_count > workbenchSqlResults.row_count ? ` of ${workbenchSqlResults.total_row_count}` : ''}
+                {' '}| Limit {workbenchSqlResults.row_limit || sqlRowLimit}
+              </div>
+              <div className="table-container sql-result-table">
+                <table className="custom-table">
+                  <thead>
+                    <tr>{workbenchSqlResults.columns?.map((col, idx) => <th key={idx}>{col}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {workbenchSqlResults.data?.map((row, rIdx) => (
+                      <tr key={rIdx}>
+                        {workbenchSqlResults.columns?.map((col, cIdx) => (
+                          <td key={cIdx} title={String(row[col] ?? '')}>{String(row[col] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const getAnomalyPlotOptions = (kind) => {
+    if (kind === 'numeric') return ['auto', 'scatter', 'histogram'];
+    if (kind === 'date') return ['auto', 'line', 'bar'];
+    return ['auto', 'bar', 'pareto'];
+  };
+
+  const renderAnomalyPlot = (data, requestedPlot = 'auto') => {
+    const summary = data?.summary || {};
+    const width = 860;
+    const height = 280;
+    const pad = { left: 56, right: 24, top: 26, bottom: 42 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+
+    const plotType = requestedPlot === 'auto'
+      ? (data.kind === 'numeric' ? 'scatter' : data.kind === 'date' ? 'line' : 'pareto')
+      : requestedPlot;
+
+    if (data.kind === 'numeric') {
+      const points = data.plot_data?.points || [];
+      const histogram = data.plot_data?.histogram || [];
+      const values = points.map(row => Number(row.value)).filter(Number.isFinite);
+      const lowerThreshold = Number(summary.lower_z_threshold ?? summary.lower_fence);
+      const upperThreshold = Number(summary.upper_z_threshold ?? summary.upper_fence);
+      const thresholds = [lowerThreshold, upperThreshold, summary.mean]
+        .map(Number)
+        .filter(Number.isFinite);
+      if (!values.length && !histogram.length) {
+        return <div className="empty-state">No numeric values to plot for this scan.</div>;
+      }
+
+      if (plotType === 'histogram') {
+        const maxCount = Math.max(...histogram.map(bin => Number(bin.count) || 0), 1);
+        const barWidth = Math.max(8, chartWidth / histogram.length * 0.68);
+        const slot = chartWidth / histogram.length;
+        return (
+          <div className="anomaly-plot-card">
+            <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
+              <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+              <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+              {histogram.map((bin, idx) => {
+                const count = Number(bin.count) || 0;
+                const barHeight = (count / maxCount) * chartHeight;
+                const x = pad.left + idx * slot + (slot - barWidth) / 2;
+                const y = pad.top + chartHeight - barHeight;
+                const isThresholdBin = lowerThreshold >= bin.min && lowerThreshold <= bin.max || upperThreshold >= bin.min && upperThreshold <= bin.max;
+                return (
+                  <g key={`${bin.min}-${idx}`}>
+                    <rect x={x} y={y} width={barWidth} height={barHeight} rx="3" className={isThresholdBin ? 'anomaly-bar warning' : 'anomaly-bar'} />
+                    <title>{`${bin.min.toFixed(2)} - ${bin.max.toFixed(2)}\nCount: ${count}`}</title>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        );
+      }
+
+      const minVal = Math.min(...values, ...thresholds);
+      const maxVal = Math.max(...values, ...thresholds);
+      const span = maxVal - minVal || 1;
+      const scaleY = (value) => pad.top + chartHeight - ((value - minVal) / span) * chartHeight;
+      const scaleX = (idx) => pad.left + (points.length === 1 ? chartWidth / 2 : (idx / (points.length - 1)) * chartWidth);
+      const fenceLines = [
+        { label: 'Lower 3 sigma', value: lowerThreshold, color: 'var(--accent-orange)' },
+        { label: 'Upper 3 sigma', value: upperThreshold, color: 'var(--accent-orange)' },
+        { label: 'Mean', value: Number(summary.mean), color: 'var(--accent-cyan)' }
+      ].filter(line => Number.isFinite(line.value));
+
+      return (
+        <div className="anomaly-plot-card">
+          <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
+            <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+            <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+            {fenceLines.map(line => {
+              const y = scaleY(line.value);
+              return (
+                <g key={line.label}>
+                  <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke={line.color} strokeDasharray="6 5" strokeWidth="1.5" />
+                  <text x={pad.left + 8} y={y - 6} className="chart-label" fill={line.color}>{line.label}: {line.value.toFixed(2)}</text>
+                </g>
+              );
+            })}
+            {points.map((row, idx) => {
+              const value = Number(row.value);
+              const y = scaleY(value);
+              const x = scaleX(idx);
+              return (
+                <g key={`${value}-${idx}`}>
+                  <circle cx={x} cy={y} r={row.is_anomaly ? 5 : 3} className={row.is_anomaly ? 'anomaly-dot critical' : 'anomaly-dot'} />
+                  <title>{`Value: ${value}${row.is_anomaly ? '\nOutlier' : ''}`}</title>
+                </g>
+              );
+            })}
+          </svg>
+          <div className="anomaly-legend">
+            <span><i className="legend-dot critical"></i>Outlier values</span>
+            <span><i className="legend-line orange"></i>3-sigma bounds</span>
+            <span><i className="legend-line cyan"></i>Mean</span>
+          </div>
+        </div>
+      );
+    }
+
+    const sourceRows = data.kind === 'date' ? (data.plot_data?.series || []) : (data.plot_data?.categories || []);
+    if (!sourceRows.length) {
+      return <div className="empty-state">No values to plot for this scan.</div>;
+    }
+    const labelKey = data.kind === 'date' ? 'ACTIVITY_DATE' : 'VALUE';
+    const valueKey = data.kind === 'date' ? 'ROW_COUNT' : 'COUNT';
+    const parsed = sourceRows.map(row => ({
+      label: String(row[labelKey] ?? row[labelKey.toLowerCase()] ?? row.value ?? ''),
+      value: Number(row[valueKey] ?? row[valueKey.toLowerCase()] ?? row.count ?? 0),
+      pct: row.pct,
+      direction: row.DIRECTION || row.direction || '',
+      modifiedZ: row.MODIFIED_Z ?? row.modified_z,
+      rollingMedian: row.ROLLING_MEDIAN ?? row.rolling_median,
+      isAnomaly: Boolean(row.IS_ANOMALY || row.IS_RARE)
+    })).filter(row => Number.isFinite(row.value));
+    const maxVal = Math.max(...parsed.map(row => row.value), 1);
+
+    if (plotType === 'line') {
+      const points = parsed.map((row, idx) => ({
+        x: pad.left + (parsed.length === 1 ? chartWidth / 2 : (idx / (parsed.length - 1)) * chartWidth),
+        y: pad.top + chartHeight - (row.value / maxVal) * chartHeight,
+        ...row
+      }));
+      return (
+        <div className="anomaly-plot-card">
+          <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
+            <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+            <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+            <polyline points={points.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="var(--accent-cyan)" strokeWidth="2.5" />
+            {points.map((point, idx) => (
+              <g key={`${point.label}-${idx}`}>
+                <circle cx={point.x} cy={point.y} r={point.isAnomaly ? 5 : 3} className={point.isAnomaly ? 'anomaly-dot critical' : 'anomaly-dot'} />
+                {idx % Math.ceil(points.length / 10 || 1) === 0 && <text x={point.x} y={height - 14} className="chart-label" textAnchor="middle">{point.label.slice(0, 10)}</text>}
+                <title>{`${point.label}\nCount: ${point.value}${point.isAnomaly ? `\n${point.direction || 'anomaly'} anomaly${point.modifiedZ !== undefined ? `\nModified Z: ${point.modifiedZ}` : ''}` : ''}`}</title>
+              </g>
+            ))}
+          </svg>
+        </div>
+      );
+    }
+
+    const chartRows = plotType === 'pareto'
+      ? [...parsed].sort((a, b) => b.value - a.value)
+      : parsed;
+    const barWidth = Math.max(10, chartWidth / parsed.length * 0.58);
+    const slot = chartWidth / chartRows.length;
+    const totalValue = chartRows.reduce((sum, row) => sum + row.value, 0) || 1;
+    let cumulativeValue = 0;
+    const paretoPoints = chartRows.map((row, idx) => {
+      cumulativeValue += row.value;
+      return {
+        x: pad.left + idx * slot + slot / 2,
+        y: pad.top + chartHeight - (cumulativeValue / totalValue) * chartHeight,
+        pct: (cumulativeValue / totalValue) * 100
+      };
+    });
+
+    return (
+      <div className="anomaly-plot-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          {plotType === 'pareto' && (
+            <>
+              <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+              {[0, 50, 100].map(pct => (
+                <text key={pct} x={width - pad.right + 6} y={pad.top + chartHeight - (pct / 100) * chartHeight + 4} className="chart-label">{pct}%</text>
+              ))}
+            </>
+          )}
+          {chartRows.map((row, idx) => {
+            const barHeight = (row.value / maxVal) * chartHeight;
+            const x = pad.left + idx * slot + (slot - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            return (
+              <g key={`${row.label}-${idx}`}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="3" className={row.isAnomaly ? 'anomaly-bar warning' : 'anomaly-bar'} />
+                {idx % Math.ceil(chartRows.length / 10 || 1) === 0 && (
+                  <text x={x + barWidth / 2} y={height - 14} className="chart-label" textAnchor="middle">
+                    {row.label.slice(0, 10)}
+                  </text>
+                )}
+                <title>{`${row.label}\nCount: ${row.value}${row.pct !== undefined ? `\nPct: ${row.pct}%` : ''}${row.isAnomaly ? `\n${row.direction || 'anomaly'} anomaly${row.modifiedZ !== undefined ? `\nModified Z: ${row.modifiedZ}` : ''}` : ''}`}</title>
+              </g>
+            );
+          })}
+          {plotType === 'pareto' && (
+            <>
+              <polyline points={paretoPoints.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="var(--accent-green)" strokeWidth="2.4" strokeDasharray="5 4" />
+              {paretoPoints.map((point, idx) => (
+                <g key={`pareto-${idx}`}>
+                  <circle cx={point.x} cy={point.y} r="3.5" className="pareto-dot" />
+                  <title>{`Cumulative: ${point.pct.toFixed(1)}%`}</title>
+                </g>
+              ))}
+            </>
+          )}
+        </svg>
+        {plotType === 'pareto' && (
+          <div className="anomaly-legend">
+            <span><i className="legend-dot critical"></i>Rare values</span>
+            <span><i className="legend-line green"></i>Cumulative share</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const getKeyValue = (obj, key) => {
     if (!obj || !key) return '';
     const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
     return foundKey ? obj[foundKey] : '';
+  };
+
+  const formatVolumeTimestamp = (value, granularity = 'day') => {
+    if (!value) return '-';
+    const text = String(value).replace('T', ' ').replace('.000', '');
+    if (granularity === 'hour') return text.slice(0, 16);
+    if (granularity === 'month') return text.slice(0, 7);
+    return text.slice(0, 10);
+  };
+
+  const getVolumeSeries = (data) => (
+    data?.plot_data?.series || []
+  ).map((row, idx) => ({
+    label: formatVolumeTimestamp(getKeyValue(row, 'ACTIVITY_BUCKET') || getKeyValue(row, 'ACTIVITY_DATE'), data?.summary?.granularity),
+    rawLabel: String(getKeyValue(row, 'ACTIVITY_BUCKET') || getKeyValue(row, 'ACTIVITY_DATE') || `Bucket ${idx + 1}`),
+    value: Number(getKeyValue(row, 'ROW_COUNT') || 0),
+    isAnomaly: Boolean(getKeyValue(row, 'IS_ANOMALY')),
+    direction: getKeyValue(row, 'DIRECTION') || '',
+    modifiedZ: getKeyValue(row, 'MODIFIED_Z')
+  })).filter(row => Number.isFinite(row.value));
+
+  const renderVolumeThroughputChart = (data, chartType = 'bar') => {
+    const rows = getVolumeSeries(data);
+    if (!rows.length) return <div className="empty-state">No bucketed volume data available for this selection.</div>;
+    const width = 1040;
+    const height = 340;
+    const pad = { left: 62, right: 26, top: 26, bottom: 58 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...rows.map(row => row.value), 1) * 1.12;
+    const points = rows.map((row, idx) => ({
+      ...row,
+      x: pad.left + (rows.length === 1 ? chartWidth / 2 : (idx / (rows.length - 1)) * chartWidth),
+      y: pad.top + chartHeight - (row.value / maxVal) * chartHeight
+    }));
+    const barSlot = chartWidth / rows.length;
+    const barWidth = Math.max(4, Math.min(32, barSlot * 0.64));
+    const areaPath = `M ${points[0].x} ${height - pad.bottom} ${points.map(point => `L ${point.x} ${point.y}`).join(' ')} L ${points[points.length - 1].x} ${height - pad.bottom} Z`;
+    const linePath = points.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    const showBars = chartType === 'bar';
+    const showLine = chartType === 'line' || chartType === 'area';
+    const showArea = chartType === 'area';
+    const showScatter = chartType === 'scatter';
+
+    return (
+      <div className="volume-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="volume-chart-svg">
+          <defs>
+            <linearGradient id="volumeBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-blue)" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity="0.32" />
+            </linearGradient>
+            <linearGradient id="volumeAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
+            const y = pad.top + chartHeight - tick * chartHeight;
+            return (
+              <g key={tick}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 12} y={y + 4} textAnchor="end" className="chart-label">{Math.round(maxVal * tick)}</text>
+              </g>
+            );
+          })}
+          {showArea && <path d={areaPath} fill="url(#volumeAreaGrad)" />}
+          {showLine && <path d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth="2.5" />}
+          {showBars && points.map((point, idx) => {
+            const barHeight = height - pad.bottom - point.y;
+            const x = pad.left + idx * barSlot + (barSlot - barWidth) / 2;
+            return (
+              <g key={`${point.rawLabel}-${idx}`}>
+                <rect x={x} y={point.y} width={barWidth} height={barHeight} rx="4" className={point.isAnomaly ? 'volume-bar anomaly' : 'volume-bar'} />
+                <title>{`${point.label}\nCount: ${point.value}${point.isAnomaly ? `\n${point.direction} anomaly\nModified Z: ${point.modifiedZ}` : ''}`}</title>
+              </g>
+            );
+          })}
+          {(showLine || showScatter) && points.map((point, idx) => (
+            <g key={`${point.rawLabel}-${idx}`}>
+              <circle cx={point.x} cy={point.y} r={point.isAnomaly ? 5 : showScatter ? 4 : 3} className={point.isAnomaly ? 'anomaly-dot critical' : 'anomaly-dot'} />
+              <title>{`${point.label}\nCount: ${point.value}${point.isAnomaly ? `\n${point.direction} anomaly\nModified Z: ${point.modifiedZ}` : ''}`}</title>
+            </g>
+          ))}
+          {points.map((point, idx) => (
+            idx % Math.ceil(points.length / 8 || 1) === 0
+              ? <text key={`label-${point.rawLabel}-${idx}`} x={point.x} y={height - 18} className="chart-label" textAnchor="middle">{point.label}</text>
+              : null
+          ))}
+          <text x={pad.left} y={height - 4} className="chart-label">{data?.summary?.granularity || 'bucket'}</text>
+        </svg>
+      </div>
+    );
+  };
+
+  const renderVolumeHeatmap = (data) => {
+    const rows = data?.plot_data?.heatmap || [];
+    if (!rows.length) return <div className="empty-state">No hour-of-day heatmap data returned for this selection.</div>;
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayLookup = {
+      MON: 'Mon', MONDAY: 'Mon', '1': 'Mon',
+      TUE: 'Tue', TUESDAY: 'Tue', '2': 'Tue',
+      WED: 'Wed', WEDNESDAY: 'Wed', '3': 'Wed',
+      THU: 'Thu', THURSDAY: 'Thu', '4': 'Thu',
+      FRI: 'Fri', FRIDAY: 'Fri', '5': 'Fri',
+      SAT: 'Sat', SATURDAY: 'Sat', '6': 'Sat',
+      SUN: 'Sun', SUNDAY: 'Sun', '0': 'Sun', '7': 'Sun'
+    };
+    const hours = Array.from({ length: 24 }, (_, idx) => `${String(idx).padStart(2, '0')}:00`);
+    const values = new Map();
+    rows.forEach(row => {
+      const dayValue = String(getKeyValue(row, 'DAY_NAME') || getKeyValue(row, 'DAY_SORT') || '').toUpperCase();
+      const day = dayLookup[dayValue] || dayLookup[String(getKeyValue(row, 'DAY_SORT'))] || String(dayValue).slice(0, 3);
+      const hour = String(getKeyValue(row, 'HOUR_BUCKET') || '').slice(0, 5);
+      values.set(`${day}-${hour}`, Number(getKeyValue(row, 'ROW_COUNT') || 0));
+    });
+    const maxVal = Math.max(...Array.from(values.values()), 1);
+    return (
+      <div className="volume-heatmap-card">
+        <div className="volume-heatmap-header">
+          <span></span>
+          {days.map(day => <strong key={day}>{day}</strong>)}
+        </div>
+        <div className="volume-heatmap-grid">
+          {hours.map(hour => (
+            <div key={hour} className="volume-heatmap-row">
+              <span>{hour}</span>
+              {days.map(day => {
+                const value = values.get(`${day}-${hour}`) || 0;
+                const intensity = value / maxVal;
+                return (
+                  <div
+                    key={`${day}-${hour}`}
+                    className="volume-heat-cell"
+                    style={{ '--heat': intensity }}
+                    title={`${day} ${hour}\nCount: ${value}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const getVolumeHeatmapRows = (data) => {
+    const rows = data?.plot_data?.heatmap || [];
+    const dayLookup = {
+      MON: 'Mon', MONDAY: 'Mon', '1': 'Mon',
+      TUE: 'Tue', TUESDAY: 'Tue', '2': 'Tue',
+      WED: 'Wed', WEDNESDAY: 'Wed', '3': 'Wed',
+      THU: 'Thu', THURSDAY: 'Thu', '4': 'Thu',
+      FRI: 'Fri', FRIDAY: 'Fri', '5': 'Fri',
+      SAT: 'Sat', SATURDAY: 'Sat', '6': 'Sat',
+      SUN: 'Sun', SUNDAY: 'Sun', '0': 'Sun', '7': 'Sun'
+    };
+    return rows.map(row => {
+      const dayValue = String(getKeyValue(row, 'DAY_NAME') || getKeyValue(row, 'DAY_SORT') || '').toUpperCase();
+      return {
+        day: dayLookup[dayValue] || dayLookup[String(getKeyValue(row, 'DAY_SORT'))] || String(dayValue).slice(0, 3),
+        hour: String(getKeyValue(row, 'HOUR_BUCKET') || '').slice(0, 5),
+        value: Number(getKeyValue(row, 'ROW_COUNT') || 0)
+      };
+    }).filter(row => row.day && row.hour && Number.isFinite(row.value));
+  };
+
+  const renderVolumeHeatmapBarChart = (data, groupBy = 'day') => {
+    const sourceRows = getVolumeHeatmapRows(data);
+    if (!sourceRows.length) return <div className="empty-state">No peak-pattern data available for this view.</div>;
+    const order = groupBy === 'hour'
+      ? Array.from({ length: 24 }, (_, idx) => `${String(idx).padStart(2, '0')}:00`)
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const bucketKey = groupBy === 'hour' ? 'hour' : 'day';
+    const totals = order.map(label => ({
+      label,
+      value: sourceRows.filter(row => row[bucketKey] === label).reduce((sum, row) => sum + row.value, 0)
+    }));
+    const width = 920;
+    const height = 300;
+    const pad = { left: 58, right: 24, top: 24, bottom: 52 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...totals.map(row => row.value), 1) * 1.12;
+    const slot = chartWidth / totals.length;
+    const barWidth = Math.max(14, slot * 0.56);
+    return (
+      <div className="volume-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="volume-mini-chart-svg">
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          {totals.map((row, idx) => {
+            const barHeight = (row.value / maxVal) * chartHeight;
+            const x = pad.left + idx * slot + (slot - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            return (
+              <g key={row.label}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="5" className="volume-bar" />
+                <text x={x + barWidth / 2} y={height - 18} className="chart-label" textAnchor="middle">{row.label}</text>
+                <title>{`${row.label}\nCount: ${row.value}`}</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
+  const renderVolumeBubbleChart = (data) => {
+    const sourceRows = getVolumeHeatmapRows(data);
+    if (!sourceRows.length) return <div className="empty-state">No peak-pattern data available for bubble view.</div>;
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const hours = Array.from({ length: 24 }, (_, idx) => `${String(idx).padStart(2, '0')}:00`);
+    const width = 980;
+    const height = 410;
+    const pad = { left: 64, right: 26, top: 24, bottom: 46 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...sourceRows.map(row => row.value), 1);
+    const xForDay = (day) => pad.left + (days.indexOf(day) / Math.max(days.length - 1, 1)) * chartWidth;
+    const yForHour = (hour) => pad.top + (hours.indexOf(hour) / Math.max(hours.length - 1, 1)) * chartHeight;
+    return (
+      <div className="volume-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="volume-bubble-svg">
+          {days.map(day => (
+            <text key={day} x={xForDay(day)} y={height - 18} className="chart-label" textAnchor="middle">{day}</text>
+          ))}
+          {hours.filter((_, idx) => idx % 3 === 0).map(hour => (
+            <g key={hour}>
+              <line x1={pad.left} y1={yForHour(hour)} x2={width - pad.right} y2={yForHour(hour)} className="chart-grid-line" />
+              <text x={pad.left - 12} y={yForHour(hour) + 4} className="chart-label" textAnchor="end">{hour}</text>
+            </g>
+          ))}
+          {sourceRows.map((row, idx) => {
+            const radius = 4 + (row.value / maxVal) * 20;
+            return (
+              <g key={`${row.day}-${row.hour}-${idx}`}>
+                <circle cx={xForDay(row.day)} cy={yForHour(row.hour)} r={radius} className="volume-bubble" />
+                <title>{`${row.day} ${row.hour}\nCount: ${row.value}`}</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
+  const renderVolumePeakPatternChart = (data, chartType) => {
+    if (chartType === 'dayBar') return renderVolumeHeatmapBarChart(data, 'day');
+    if (chartType === 'hourBar') return renderVolumeHeatmapBarChart(data, 'hour');
+    if (chartType === 'bubble') return renderVolumeBubbleChart(data);
+    return renderVolumeHeatmap(data);
+  };
+
+  const normalizeProfilerVolumeRows = (rows = [], mode = 'daily') => {
+    return rows.map((row, idx) => {
+      const label = mode === 'daily'
+        ? String(getKeyValue(row, 'ACTIVITY_DATE') || getKeyValue(row, 'activity_date') || '')
+        : String(getKeyValue(row, 'PERIOD') || getKeyValue(row, 'period') || '');
+      return {
+        label: label || `Bucket ${idx + 1}`,
+        value: Number(getKeyValue(row, 'ROW_COUNT') || getKeyValue(row, 'row_count') || 0)
+      };
+    }).filter(row => Number.isFinite(row.value));
+  };
+
+  const renderProfilerVolumeChart = (rows = [], mode = 'daily') => {
+    const parsed = normalizeProfilerVolumeRows(rows, mode);
+    if (!parsed.length) return <div className="empty-state">No volume data available for this bucket.</div>;
+
+    const chartRows = mode === 'daily'
+      ? [...parsed].sort((a, b) => String(a.label).localeCompare(String(b.label))).slice(-90)
+      : parsed;
+    const isTrend = mode === 'daily' || mode === 'monthly';
+    const width = 900;
+    const height = 310;
+    const pad = { left: 64, right: 28, top: 28, bottom: 58 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...chartRows.map(row => row.value), 1) * 1.16;
+
+    if (isTrend) {
+      const points = chartRows.map((row, idx) => ({
+        x: pad.left + (chartRows.length === 1 ? chartWidth / 2 : (idx / (chartRows.length - 1)) * chartWidth),
+        y: pad.top + chartHeight - (row.value / maxVal) * chartHeight,
+        ...row
+      }));
+      const areaPath = `M ${points[0].x} ${height - pad.bottom} ${points.map(point => `L ${point.x} ${point.y}`).join(' ')} L ${points[points.length - 1].x} ${height - pad.bottom} Z`;
+      const linePath = `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')}`;
+
+      return (
+        <div className="cost-chart-card profiler-volume-chart">
+          <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+            <defs>
+              <linearGradient id="profilerVolumeAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#00f2fe" stopOpacity="0.26" />
+                <stop offset="100%" stopColor="#0095ff" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+              const y = pad.top + chartHeight * (1 - ratio);
+              return (
+                <g key={ratio}>
+                  <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                  <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+                </g>
+              );
+            })}
+            <path d={areaPath} fill="url(#profilerVolumeAreaGrad)" />
+            <path d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth="3" />
+            {points.map((point, idx) => (
+              <g key={`${point.label}-${idx}`}>
+                <circle cx={point.x} cy={point.y} r="4.5" className="cost-point" />
+                {idx % Math.ceil(points.length / 9 || 1) === 0 && (
+                  <text x={point.x} y={height - 26} className="chart-label" textAnchor="middle">{point.label.slice(0, 10)}</text>
+                )}
+                <title>{`${point.label}\nRows: ${point.value}`}</title>
+              </g>
+            ))}
+            <text x={width / 2} y={height - 8} className="chart-label" textAnchor="middle">{mode === 'daily' ? 'Activity date' : 'Month'}</text>
+            <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>Rows</text>
+            <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+            <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+          </svg>
+        </div>
+      );
+    }
+
+    const slot = chartWidth / chartRows.length;
+    const barWidth = Math.max(16, Math.min(58, slot * 0.56));
+    return (
+      <div className="cost-chart-card profiler-volume-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="profilerVolumeBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00f2fe" />
+              <stop offset="100%" stopColor="#0095ff" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          {chartRows.map((row, idx) => {
+            const barHeight = (row.value / maxVal) * chartHeight;
+            const x = pad.left + idx * slot + (slot - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            return (
+              <g key={`${row.label}-${idx}`}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="5" fill="url(#profilerVolumeBarGrad)" />
+                <text x={x + barWidth / 2} y={height - 30} className="chart-label" textAnchor="middle">{row.label.slice(0, 9)}</text>
+                <title>{`${row.label}\nRows: ${row.value}`}</title>
+              </g>
+            );
+          })}
+          <text x={width / 2} y={height - 8} className="chart-label" textAnchor="middle">{mode === 'weekday' ? 'Day of week' : 'Hour'}</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>Rows</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const normalizeFreshnessTrendRows = (rows = []) => rows.map((row, idx) => ({
+    label: formatVolumeTimestamp(getKeyValue(row, 'ACTIVITY_BUCKET') || getKeyValue(row, 'activity_bucket'), appScopes.freshness.expectedFrequency === 'hourly' ? 'hour' : appScopes.freshness.expectedFrequency === 'monthly' ? 'month' : 'day') || `Bucket ${idx + 1}`,
+    value: Number(getKeyValue(row, 'ROW_COUNT') || getKeyValue(row, 'row_count') || 0)
+  })).filter(row => Number.isFinite(row.value));
+
+  const renderFreshnessTrendChart = (rows = []) => {
+    const parsed = normalizeFreshnessTrendRows(rows).slice(-60);
+    if (!parsed.length) return <div className="empty-state">No freshness trend buckets were returned for this date field.</div>;
+    const width = 940;
+    const height = 300;
+    const pad = { left: 64, right: 28, top: 28, bottom: 58 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...parsed.map(row => row.value), 1) * 1.15;
+    const slot = chartWidth / parsed.length;
+    const barWidth = Math.max(5, Math.min(34, slot * 0.62));
+    const points = parsed.map((row, idx) => ({
+      ...row,
+      x: pad.left + idx * slot + slot / 2,
+      y: pad.top + chartHeight - (row.value / maxVal) * chartHeight
+    }));
+    const linePath = points.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+
+    return (
+      <div className="cost-chart-card freshness-trend-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="freshnessBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#6ee7b7" />
+              <stop offset="100%" stopColor="#00bcd4" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          {points.map((point, idx) => {
+            const barHeight = (point.value / maxVal) * chartHeight;
+            const x = point.x - barWidth / 2;
+            const y = pad.top + chartHeight - barHeight;
+            return (
+              <g key={`${point.label}-${idx}`}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="5" fill="url(#freshnessBarGrad)" opacity="0.76" />
+                {idx % Math.ceil(points.length / 10 || 1) === 0 && (
+                  <text x={point.x} y={height - 28} className="chart-label" textAnchor="middle">{point.label.slice(0, 10)}</text>
+                )}
+                <title>{`${point.label}\nRows: ${point.value.toLocaleString()}`}</title>
+              </g>
+            );
+          })}
+          <path d={linePath} fill="none" stroke="var(--accent-green)" strokeWidth="2.5" />
+          {points.map((point, idx) => <circle key={`dot-${idx}`} cx={point.x} cy={point.y} r="3.5" className="cost-point" />)}
+          <text x={width / 2} y={height - 8} className="chart-label" textAnchor="middle">Load bucket</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>Rows</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const formatCredits = (value) => `${Number(value || 0).toFixed(2)} cr`;
+  const formatUsd = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+  const renderCostTrendChart = (rows = []) => {
+    if (!rows.length) return <div className="empty-state">No metering trend available.</div>;
+    const width = 900;
+    const height = 300;
+    const pad = { left: 58, right: 28, top: 24, bottom: 46 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...rows.map(row => Number(row.credits) || 0), 1) * 1.18;
+    const stepX = chartWidth / Math.max(rows.length - 1, 1);
+    const points = rows.map((row, idx) => ({
+      x: pad.left + idx * stepX,
+      y: pad.top + chartHeight - ((Number(row.credits) || 0) / maxVal) * chartHeight,
+      row
+    }));
+    const areaPath = `M ${points[0].x} ${height - pad.bottom} ${points.map(point => `L ${point.x} ${point.y}`).join(' ')} L ${points[points.length - 1].x} ${height - pad.bottom} Z`;
+    const linePath = `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')}`;
+
+    return (
+      <div className="cost-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="costAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00f2fe" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#0095ff" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          <path d={areaPath} fill="url(#costAreaGrad)" />
+          <path d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth="3" />
+          {points.map((point, idx) => (
+            <g key={point.row.date}>
+              <circle cx={point.x} cy={point.y} r="5" className="cost-point" />
+              <title>{`${point.row.date}\nCredits: ${point.row.credits}\nQueries: ${point.row.queries}\nCost: ${formatUsd(point.row.cost_usd)}`}</title>
+              {idx % Math.ceil(points.length / 8 || 1) === 0 && <text x={point.x} y={height - 18} className="chart-label" textAnchor="middle">{String(point.row.date).slice(5)}</text>}
+            </g>
+          ))}
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const renderCostBarChart = (rows = [], labelKey, valueKey, titleKey = labelKey) => {
+    if (!rows.length) return <div className="empty-state">No breakdown data available.</div>;
+    const width = 900;
+    const height = 300;
+    const pad = { left: 58, right: 28, top: 22, bottom: 58 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxVal = Math.max(...rows.map(row => Number(row[valueKey]) || 0), 1) * 1.16;
+    const slot = chartWidth / rows.length;
+    const barWidth = Math.max(18, slot * 0.52);
+
+    return (
+      <div className="cost-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="costBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00f2fe" />
+              <stop offset="100%" stopColor="#0095ff" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          {rows.map((row, idx) => {
+            const value = Number(row[valueKey]) || 0;
+            const barHeight = (value / maxVal) * chartHeight;
+            const x = pad.left + idx * slot + (slot - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            const label = String(row[labelKey] || '');
+            return (
+              <g key={`${label}-${idx}`}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="5" className="cost-bar" />
+                <text x={x + barWidth / 2} y={y - 8} className="chart-label" textAnchor="middle">{value.toFixed(value < 10 ? 2 : 0)}</text>
+                <text x={x + barWidth / 2} y={height - 30} className="chart-label" textAnchor="middle">{label.slice(0, 14)}</text>
+                <title>{`${row[titleKey] || label}\nCredits: ${value}\nQueries: ${row.queries ?? 'n/a'}${row.share_pct !== undefined ? `\nShare: ${row.share_pct}%` : ''}`}</title>
+              </g>
+            );
+          })}
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const renderCostScatterChart = (rows = []) => {
+    const sourceRows = rows.filter(row => Number(row.credits) > 0 || Number(row.elapsed_seconds) > 0);
+    if (!sourceRows.length) return <div className="empty-state">No query runtime data available.</div>;
+    const width = 900;
+    const height = 300;
+    const pad = { left: 62, right: 28, top: 24, bottom: 48 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const maxElapsed = Math.max(...sourceRows.map(row => Number(row.elapsed_seconds) || 0), 1) * 1.12;
+    const maxCredits = Math.max(...sourceRows.map(row => Number(row.credits) || 0), 1) * 1.12;
+    const scaleX = (value) => pad.left + (value / maxElapsed) * chartWidth;
+    const scaleY = (value) => pad.top + chartHeight - (value / maxCredits) * chartHeight;
+
+    return (
+      <div className="cost-chart-card">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            const x = pad.left + chartWidth * ratio;
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <line x1={x} y1={pad.top} x2={x} y2={height - pad.bottom} className="chart-grid-line" />
+              </g>
+            );
+          })}
+          {sourceRows.map((row, idx) => {
+            const credits = Number(row.credits) || 0;
+            const elapsed = Number(row.elapsed_seconds) || 0;
+            return (
+              <g key={`${row.query_id}-${idx}`}>
+                <circle cx={scaleX(elapsed)} cy={scaleY(credits)} r={Math.max(4, Math.min(12, credits * 1.4))} className={row.status === 'FAILED' ? 'cost-bubble warning' : 'cost-bubble'} />
+                <title>{`${row.query_id}\n${row.user} on ${row.warehouse}\nElapsed: ${elapsed}s\nCredits: ${credits}`}</title>
+              </g>
+            );
+          })}
+          <text x={width / 2} y={height - 12} className="chart-label" textAnchor="middle">Elapsed seconds</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>Credits</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const renderReportBarChart = (rows = [], xField, yField) => {
+    const sourceRows = rows.slice(0, 40);
+    if (!sourceRows.length) return <div className="empty-state">No chart data available.</div>;
+    const width = 900;
+    const height = 310;
+    const pad = { left: 64, right: 28, top: 28, bottom: 62 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const values = sourceRows.map(row => Number(getKeyValue(row, yField)) || 0);
+    const maxVal = Math.max(...values, 1) * 1.16;
+    const slot = chartWidth / sourceRows.length;
+    const barWidth = Math.max(12, Math.min(44, slot * 0.56));
+
+    return (
+      <div className="cost-chart-card report-dashboard-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="reportBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00f2fe" />
+              <stop offset="100%" stopColor="#0095ff" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          {sourceRows.map((row, idx) => {
+            const value = Number(getKeyValue(row, yField)) || 0;
+            const label = String(getKeyValue(row, xField) || `Row ${idx + 1}`);
+            const barHeight = (value / maxVal) * chartHeight;
+            const x = pad.left + idx * slot + (slot - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            return (
+              <g key={`${label}-${idx}`}>
+                <rect x={x} y={y} width={barWidth} height={barHeight} rx="5" fill="url(#reportBarGrad)" />
+                {idx % Math.ceil(sourceRows.length / 10 || 1) === 0 && (
+                  <text x={x + barWidth / 2} y={height - 30} className="chart-label" textAnchor="middle">{label.slice(0, 12)}</text>
+                )}
+                <title>{`${label}\n${yField}: ${value}`}</title>
+              </g>
+            );
+          })}
+          <text x={width / 2} y={height - 10} className="chart-label" textAnchor="middle">{xField}</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{yField}</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
+  };
+
+  const renderReportLineChart = (rows = [], xField, yField) => {
+    const sourceRows = rows.slice(0, 80);
+    if (!sourceRows.length) return <div className="empty-state">No chart data available.</div>;
+    const width = 900;
+    const height = 310;
+    const pad = { left: 64, right: 28, top: 28, bottom: 58 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const values = sourceRows.map(row => Number(getKeyValue(row, yField)) || 0);
+    const maxVal = Math.max(...values, 1) * 1.16;
+    const stepX = chartWidth / Math.max(sourceRows.length - 1, 1);
+    const points = sourceRows.map((row, idx) => {
+      const value = Number(getKeyValue(row, yField)) || 0;
+      const label = String(getKeyValue(row, xField) || `Row ${idx + 1}`);
+      return {
+        x: pad.left + idx * stepX,
+        y: pad.top + chartHeight - (value / maxVal) * chartHeight,
+        value,
+        label
+      };
+    });
+    const areaPath = `M ${points[0].x} ${height - pad.bottom} ${points.map(point => `L ${point.x} ${point.y}`).join(' ')} L ${points[points.length - 1].x} ${height - pad.bottom} Z`;
+    const linePath = `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')}`;
+
+    return (
+      <div className="cost-chart-card report-dashboard-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          <defs>
+            <linearGradient id="reportLineAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00f2fe" stopOpacity="0.26" />
+              <stop offset="100%" stopColor="#0095ff" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          <path d={areaPath} fill="url(#reportLineAreaGrad)" />
+          <path d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth="3" />
+          {points.map((point, idx) => (
+            <g key={`${point.label}-${idx}`}>
+              <circle cx={point.x} cy={point.y} r="4.5" className="cost-point" />
+              <title>{`${point.label}\n${yField}: ${point.value}`}</title>
+              {idx % Math.ceil(points.length / 9 || 1) === 0 && (
+                <text x={point.x} y={height - 26} className="chart-label" textAnchor="middle">{point.label.slice(0, 10)}</text>
+              )}
+            </g>
+          ))}
+          <text x={width / 2} y={height - 8} className="chart-label" textAnchor="middle">{xField}</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{yField}</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+        </svg>
+      </div>
+    );
   };
 
   // SVG Chart Render Helper: Bar Chart
@@ -1075,7 +3064,7 @@ function App() {
             onClick={() => setActiveTab('chat')}
           >
             <MessageSquare size={16} />
-            <span>AI Chat Copilot</span>
+            <span>AI Analyst Studio</span>
           </div>
           
           <div 
@@ -1087,60 +3076,83 @@ function App() {
           </div>
           
           <div 
-            className={`sidebar-item ${activeTab === 'metadata' ? 'active' : ''}`}
-            onClick={() => setActiveTab('metadata')}
+            className={`sidebar-item ${activeTab === 'tableDetails' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tableDetails')}
           >
             <Database size={16} />
-            <span>Metadata & Dictionary</span>
+            <span>Table Intelligence Studio</span>
           </div>
-          
+
           <div 
-            className={`sidebar-item ${activeTab === 'governance' ? 'active' : ''}`}
-            onClick={() => setActiveTab('governance')}
+            className={`sidebar-item ${activeTab === 'catalogSearch' ? 'active' : ''}`}
+            onClick={() => setActiveTab('catalogSearch')}
           >
-            <ShieldAlert size={16} />
-            <span>Access Explorer</span>
+            <Layers size={16} />
+            <span>Column / Table Search</span>
           </div>
-          
+
+          <div 
+            className={`sidebar-item ${activeTab === 'anomaly' ? 'active' : ''}`}
+            onClick={() => setActiveTab('anomaly')}
+          >
+            <AlertTriangle size={16} />
+            <span>Anomaly Detector</span>
+          </div>
+
+          <div 
+            className={`sidebar-item ${activeTab === 'freshness' ? 'active' : ''}`}
+            onClick={() => setActiveTab('freshness')}
+          >
+            <RefreshCw size={16} />
+            <span>Data Freshness</span>
+          </div>
+
           <div 
             className={`sidebar-item ${activeTab === 'cost' ? 'active' : ''}`}
-            onClick={() => setActiveTab('cost')}
+            onClick={() => { setActiveTab('cost'); fetchCostDashboard(); }}
           >
             <DollarSign size={16} />
-            <span>Query Cost Analyzer</span>
-          </div>
-          
-          <div 
-            className={`sidebar-item ${activeTab === 'lineage' ? 'active' : ''}`}
-            onClick={() => setActiveTab('lineage')}
-          >
-            <GitBranch size={16} />
-            <span>Lineage & Impact</span>
-          </div>
-          
-          <div 
-            className={`sidebar-item ${activeTab === 'quality' ? 'active' : ''}`}
-            onClick={() => setActiveTab('quality')}
-          >
-            <ShieldCheck size={16} />
-            <span>Data Quality Copilot</span>
+            <span>Cost Analyzer</span>
           </div>
 
           <div 
             className={`sidebar-item ${activeTab === 'rag' ? 'active' : ''}`}
-            onClick={() => setActiveTab('rag')}
+            onClick={() => { setActiveTab('rag'); fetchRagDocuments(); }}
           >
             <HelpCircle size={16} />
-            <span>Documentation Hub</span>
+            <span>Document Hub</span>
           </div>
 
           <div 
-            className={`sidebar-item ${activeTab === 'incidents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('incidents')}
+            className={`sidebar-item ${activeTab === 'queryLog' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('queryLog'); loadWorkbenchQueryLog(); }}
           >
-            <AlertTriangle size={16} />
-            <span>Incident Investigator</span>
+            <Terminal size={16} />
+            <span>Query Log</span>
           </div>
+
+          {(connectionStatus.mode === 'MOCK' || connectionStatus.mode.startsWith('SNOWFLAKE')) && (
+            <div className="sidebar-session-context">
+              <div className="sidebar-footer-label">SESSION CONTEXT</div>
+              <SearchableSelect
+                value={activeRole}
+                onChange={handleRoleChange}
+                options={roles}
+                placeholder="Select Role"
+                label="ROLE"
+                className="sidebar-select"
+              />
+
+              <SearchableSelect
+                value={activeWarehouse}
+                onChange={handleWarehouseChange}
+                options={warehouses}
+                placeholder="Select Warehouse"
+                label="WH"
+                className="sidebar-select"
+              />
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -1172,71 +3184,62 @@ function App() {
           <div className="header-top-row">
             <div className="header-title-section">
               <h1>
-                {activeTab === 'chat' && 'AI Chat Copilot'}
+                {activeTab === 'chat' && 'AI Analyst Studio'}
                 {activeTab === 'sql' && 'SQL Explainer & Performance Tuning'}
-                {activeTab === 'metadata' && 'Metadata Discovery & AI Dictionary'}
-                {activeTab === 'governance' && 'Access Control & Privilege Audit'}
+                {activeTab === 'tableDetails' && 'Table Intelligence Studio'}
+                {activeTab === 'catalogSearch' && 'Column / Table Search'}
+                {activeTab === 'anomaly' && 'Anomaly Detector'}
+                {activeTab === 'freshness' && 'Data Freshness'}
+                {activeTab === 'rag' && 'Document Hub'}
+                {activeTab === 'queryLog' && 'Query Log'}
                 {activeTab === 'cost' && 'Snowflake Query Cost Analyzer'}
-                {activeTab === 'lineage' && 'Data Lineage & Downstream Impact'}
-                {activeTab === 'quality' && 'Automated Data Quality Copilot'}
-                {activeTab === 'rag' && 'Operational Knowledge & RAG search'}
-                {activeTab === 'incidents' && 'Incident Investigation Dashboard'}
               </h1>
               <p>
-                {activeTab === 'chat' && 'Query enterprise databases in plain English.'}
+                {activeTab === 'chat' && 'Chat with data and build report views from natural language.'}
                 {activeTab === 'sql' && 'Explain, identify inefficiencies, and auto-tune queries.'}
-                {activeTab === 'metadata' && 'Search Information Schema and auto-document tables/columns.'}
-                {activeTab === 'governance' && 'Audit who has access and track SELECT privileges.'}
+                {activeTab === 'tableDetails' && 'Inspect, profile, and generate analyst-style insights for one selected table.'}
+                {activeTab === 'catalogSearch' && 'Find tables and columns by name, type, and table context.'}
+                {activeTab === 'anomaly' && 'Scan numeric, date, and text columns for unusual values.'}
+                {activeTab === 'freshness' && 'Check table recency by selected database, schema, and table scope.'}
+                {activeTab === 'rag' && 'Learn web pages, pasted text, JSON, CSV, Excel, and other files, then answer questions with cited source chunks.'}
+                {activeTab === 'queryLog' && 'Review persisted SQL executed from chat and workbench applications.'}
                 {activeTab === 'cost' && 'Track credit consumption, metering trends, and expensive runs.'}
-                {activeTab === 'lineage' && 'Explore upstream source feeds and estimate column dependency risk.'}
-                {activeTab === 'quality' && 'Null checks, duplication metrics, and global database quality logs.'}
-                {activeTab === 'rag' && 'Index and query operational manuals, runbooks, and architectures.'}
-                {activeTab === 'incidents' && 'Correlate pipeline failures, query logs, and database errors.'}
               </p>
             </div>
 
-            <div className="connection-pill" onClick={() => setConnectionModalOpen(true)}>
-              <div style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                backgroundColor: connectionStatus.status === 'connected' 
-                  ? (connectionStatus.mode.endsWith('_FALLBACK') ? 'var(--accent-orange)' : 'var(--accent-green)') 
-                  : 'var(--accent-orange)' 
-              }}></div>
-              <span style={{ fontWeight: 600 }}>
-                {connectionStatus.status === 'connected' 
-                  ? (connectionStatus.mode === 'MOCK' 
-                      ? 'Mock DB Connected' 
-                      : connectionStatus.mode.endsWith('_FALLBACK')
-                        ? `${connectionStatus.mode.replace('_FALLBACK', '')} (Fallback)`
-                        : `${connectionStatus.mode} Connected`)
-                  : 'Disconnected'}
-              </span>
+            <div className="header-actions">
+              <button
+                className={`tips-toggle ${helpTipsOpen ? 'active' : ''}`}
+                onClick={() => setHelpTipsOpen(prev => !prev)}
+                type="button"
+              >
+                <HelpCircle size={14} />
+                Tips
+              </button>
+              <div className="connection-pill" onClick={() => setConnectionModalOpen(true)}>
+                <div style={{ 
+                  width: '8px', 
+                  height: '8px', 
+                  borderRadius: '50%', 
+                  backgroundColor: connectionStatus.status === 'connected' 
+                    ? (connectionStatus.mode.endsWith('_FALLBACK') ? 'var(--accent-orange)' : 'var(--accent-green)') 
+                    : 'var(--accent-orange)' 
+                }}></div>
+                <span style={{ fontWeight: 600 }}>
+                  {connectionStatus.status === 'connected' 
+                    ? (connectionStatus.mode === 'MOCK' 
+                        ? 'Mock DB Connected' 
+                        : connectionStatus.mode.endsWith('_FALLBACK')
+                          ? `${connectionStatus.mode.replace('_FALLBACK', '')} (Fallback)`
+                          : `${connectionStatus.mode} Connected`)
+                    : 'Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
           
+          {(activeTab === 'chat' || activeTab === 'sql') && (
           <div className="scoping-selectors">
-            {(connectionStatus.mode === 'MOCK' || connectionStatus.mode.startsWith('SNOWFLAKE')) && (
-              <>
-                <SearchableSelect 
-                  value={activeRole}
-                  onChange={handleRoleChange}
-                  options={roles}
-                  placeholder="Select Role"
-                  label="ROLE"
-                />
-                
-                <SearchableSelect 
-                  value={activeWarehouse}
-                  onChange={handleWarehouseChange}
-                  options={warehouses}
-                  placeholder="Select Warehouse"
-                  label="WH"
-                />
-              </>
-            )}
-
             <SearchableSelect 
               value={activeDb}
               onChange={handleDbChange}
@@ -1269,16 +3272,40 @@ function App() {
               label={activeType === 'ALL' ? 'TABLE/VIEW' : activeType}
             />
           </div>
+          )}
+          {helpTipsOpen && (
+            <div className="contextual-tips-panel">
+              <div className="contextual-tips-title">
+                <HelpCircle size={14} />
+                {contextualTips.title}
+              </div>
+              <div className="contextual-tips-list">
+                {contextualTips.tips.map((tip, idx) => (
+                  <span key={idx}>{tip}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </header>
 
         {/* Tab Rendering Switch */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+        <div className={`tab-content ${activeTab === 'chat' ? 'chat-tab-content' : ''}`}>
           
-          {/* TAB 1: AI Chat Copilot */}
+          {/* TAB 1: AI Analyst Studio */}
           {activeTab === 'chat' && (
-            <div className="chat-wrapper" style={{ width: '100%' }}>
-              <div className="chat-panel">
-                <div className="chat-messages">
+            <div className={`analyst-studio-shell ${analystStudioTab === 'chat' ? 'chat-mode' : 'scroll-mode'}`}>
+              <div className="analyst-studio-tabs">
+                {renderWorkbenchTabs([
+                  { id: 'chat', label: 'Chat' },
+                  { id: 'ask', label: 'Ask Dataset' },
+                  { id: 'report', label: 'Report Builder' }
+                ], analystStudioTab, setAnalystStudioTab)}
+              </div>
+
+              {analystStudioTab === 'chat' && (
+                <div className="chat-wrapper" style={{ width: '100%' }}>
+                  <div className="chat-panel">
+                    <div className="chat-messages">
                   {chatMessages.map((msg, idx) => (
                     <div key={idx} className={`chat-bubble ${msg.sender}`}>
                       <div className="chat-bubble-sender">{msg.sender === 'user' ? 'User' : 'Pilot Studio AI'}</div>
@@ -1312,6 +3339,7 @@ function App() {
                           <div className="code-header">
                             <span>GENERATED {connectionStatus.mode === 'MOCK' ? 'DATABASE' : connectionStatus.mode.replace('_FALLBACK', '')} SQL</span>
                             <div style={{ display: 'flex', gap: '8px' }}>
+                              {renderRowLimitSelect()}
                               <button 
                                 className="btn btn-secondary btn-small"
                                 style={{ padding: '2px 6px', fontSize: '9px' }}
@@ -1322,7 +3350,7 @@ function App() {
                               <button 
                                 className="btn btn-primary btn-small"
                                 style={{ padding: '2px 8px', fontSize: '9px' }}
-                                onClick={() => handleExecuteChatSql(msg.sql)}
+                                onClick={() => handleExecuteChatSql(msg.sql, idx)}
                               >
                                 <Play size={8} /> Execute
                               </button>
@@ -1337,16 +3365,16 @@ function App() {
                           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '10px', textTransform: 'uppercase' }}>
                             Auto-Generated Visual: {msg.visualization.type} chart
                           </div>
-                          {msg.visualization.type === 'bar' && chatResults && chatResults.success && 
-                            renderSvgBarChart(chatResults.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
+                          {msg.visualization.type === 'bar' && msg.result?.success && 
+                            renderSvgBarChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
                           }
-                          {msg.visualization.type === 'line' && chatResults && chatResults.success && 
-                            renderSvgLineChart(chatResults.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
+                          {msg.visualization.type === 'line' && msg.result?.success && 
+                            renderSvgLineChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
                           }
-                          {msg.visualization.type === 'pie' && chatResults && chatResults.success && 
-                            renderSvgBarChart(chatResults.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase()) // Fallback pie layout
+                          {msg.visualization.type === 'pie' && msg.result?.success && 
+                            renderSvgBarChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase()) // Fallback pie layout
                           }
-                          {!chatResults && (
+                          {!msg.result && (
                             <div className="text-secondary" style={{ fontSize: '11px' }}>
                               Click "Execute" on SQL above to render this visualization dynamically.
                             </div>
@@ -1356,113 +3384,343 @@ function App() {
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
-                </div>
-
-                <div className="chat-input-area">
-                  <div className="chat-input-container">
-                    <input 
-                      type="text" 
-                      placeholder="Ask a question in plain business English... (e.g. Show customer count by state)" 
-                      className="chat-input"
-                      value={currentMessage}
-                      onChange={(e) => setCurrentMessage(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSendChatMessage(); }}
-                    />
-                    <button className="chat-send-btn" onClick={() => handleSendChatMessage()}>
-                      <Send size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Execution Console Side Panel */}
-              <div className="details-panel">
-                <div className="details-panel-header">
-                  <span className="details-panel-title">SQL Query Results Console</span>
-                  {executingChatQuery && <RefreshCw size={14} className="status-badge" style={{ animation: 'flowLine 1.5s infinite' }} />}
-                </div>
-                <div className="details-panel-body">
-                  {!chatResults && !executingChatQuery && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', gap: '10px', textAlign: 'center', padding: '30px' }}>
-                      <Terminal size={32} style={{ opacity: 0.4 }} />
-                      <div style={{ fontWeight: 600, fontSize: '14px' }}>Console Awaiting Trigger</div>
-                      <div style={{ fontSize: '12px' }}>Generate and click "Execute" on a SQL query block in the chat stream to view query execution tabular outputs here.</div>
                     </div>
-                  )}
 
-                  {executingChatQuery && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '12px' }}>
-                      <div className="status-badge" style={{ padding: '8px 16px', fontSize: '12px' }}>Executing SQL against {connectionStatus.mode.replace('_FALLBACK', '')} Warehouse...</div>
-                    </div>
-                  )}
-
-                  {chatResults && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div className="status-badge" style={{ width: '100%', justifyContent: 'center' }}>
-                        Source: {chatResults.source} | Status: Success | {chatResults.row_count} Rows Returned
+                    <div className="chat-input-area">
+                      <div className="chat-input-container">
+                        <input 
+                          type="text" 
+                          placeholder="Ask a question in plain business English... (e.g. Show customer count by state)" 
+                          className="chat-input"
+                          value={currentMessage}
+                          onChange={(e) => setCurrentMessage(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSendChatMessage(); }}
+                        />
+                        <button className="chat-send-btn" onClick={() => handleSendChatMessage()}>
+                          <Send size={14} />
+                        </button>
                       </div>
-                      
-                      {chatResults.success ? (
-                        <div className="table-container">
-                          <table className="custom-table">
-                            <thead>
-                              <tr>
-                                {chatResults.columns.map((c, idx) => <th key={idx}>{c}</th>)}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {chatResults.data.map((row, rIdx) => (
-                                <tr key={rIdx}>
-                                  {chatResults.columns.map((c, cIdx) => (
-                                    <td key={cIdx} title={String(row[c])}>
-                                      {String(row[c])}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    </div>
+                  </div>
+
+                  {/* Execution Console Side Panel */}
+                  <div className="details-panel">
+                    <div className="details-panel-header">
+                      <span className="details-panel-title">SQL Query Results Console</span>
+                      {executingChatQuery && <RefreshCw size={14} className="status-badge" style={{ animation: 'flowLine 1.5s infinite' }} />}
+                    </div>
+                    <div className="details-panel-body">
+                      {!chatResults && !executingChatQuery && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', gap: '10px', textAlign: 'center', padding: '30px' }}>
+                          <Terminal size={32} style={{ opacity: 0.4 }} />
+                          <div style={{ fontWeight: 600, fontSize: '14px' }}>Console Awaiting Trigger</div>
+                          <div style={{ fontSize: '12px' }}>Generate and click "Execute" on a SQL query block in the chat stream to view query execution tabular outputs here.</div>
                         </div>
-                      ) : (
-                        <div className="glass-card" style={{ borderColor: 'var(--accent-red)', backgroundColor: 'rgba(255,82,100,0.05)' }}>
-                          <div style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                            <AlertCircle size={14} /> Execution Error
+                      )}
+
+                      {executingChatQuery && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '12px' }}>
+                          <div className="status-badge" style={{ padding: '8px 16px', fontSize: '12px' }}>Executing SQL against {connectionStatus.mode.replace('_FALLBACK', '')} Warehouse...</div>
+                        </div>
+                      )}
+
+                      {chatResults && (
+                        <div className="chat-results-shell">
+                          <div className="status-badge chat-results-title">
+                            Source: {chatResults.source} | Status: Success | {chatResults.row_count} Rows Returned
+                            {chatResults.total_row_count > chatResults.row_count ? ` of ${chatResults.total_row_count}` : ''} | Limit {chatResults.row_limit || sqlRowLimit}
                           </div>
-                          <div style={{ fontSize: '12px', fontFamily: 'var(--font-family-mono)', color: 'var(--text-secondary)' }}>{chatResults.error}</div>
+                          
+                          {chatResults.success ? (
+                            <div className="table-container chat-results-table-scroll">
+                              <table className="custom-table">
+                                <thead>
+                                  <tr>
+                                    {chatResults.columns.map((c, idx) => <th key={idx}>{c}</th>)}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {chatResults.data.map((row, rIdx) => (
+                                    <tr key={rIdx}>
+                                      {chatResults.columns.map((c, cIdx) => (
+                                        <td key={cIdx} title={String(row[c])}>
+                                          {String(row[c])}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="glass-card" style={{ borderColor: 'var(--accent-red)', backgroundColor: 'rgba(255,82,100,0.05)' }}>
+                              <div style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                                <AlertCircle size={14} /> Execution Error
+                              </div>
+                              <div style={{ fontSize: '12px', fontFamily: 'var(--font-family-mono)', color: 'var(--text-secondary)' }}>{chatResults.error}</div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {analystStudioTab === 'ask' && (
+                <div className="panel-body ask-dataset-body">
+                  <div className="ask-dataset-layout">
+                    <div className="glass-card ask-dataset-control">
+                      <div className="glass-card-header">
+                        <span className="glass-card-title"><Sparkles size={16} /> Ask This Dataset</span>
+                        {renderRowLimitSelect()}
+                      </div>
+                      <form onSubmit={handleAskDataset} className="report-builder-form">
+                        <div className="mini-card">
+                          <div className="mini-card-title">Dataset Context</div>
+                          <p className="object-path">{activeDb || 'No DB'}.{activeSchema || 'No Schema'}{activeTable ? `.${activeTable}` : '.All Tables/Views'}</p>
+                        </div>
+                        <textarea
+                          className="form-input report-prompt-input"
+                          placeholder="Ask a business question. Example: Which region has the highest revenue trend, or what categories changed most month over month?"
+                          value={askDatasetQuestion}
+                          onChange={(e) => setAskDatasetQuestion(e.target.value)}
+                        />
+                        <button className="btn btn-primary" type="submit" disabled={askDatasetLoading || !askDatasetQuestion.trim()}>
+                          <Sparkles size={14} /> {askDatasetLoading ? 'Asking Dataset...' : 'Ask Dataset'}
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="ask-dataset-results">
+                      {!askDatasetResult && !askDatasetLoading && (
+                        <div className="empty-state ask-dataset-empty">
+                          Ask a question to generate SQL, run it in Snowflake, and turn the result into a chart, insight summary, and explanation.
+                        </div>
+                      )}
+
+                      {askDatasetLoading && (
+                        <div className="empty-state ask-dataset-empty">
+                          Generating SQL, executing it, and shaping the answer...
+                        </div>
+                      )}
+
+                      {askDatasetResult?.success && (
+                        <>
+                          <div className="glass-card ask-insight-hero">
+                            <div>
+                              <div className="mini-card-title">Insight Summary</div>
+                              <h2>{askDatasetTitle}</h2>
+                              <p>{buildDatasetInsightSummary(askDatasetResult, askDatasetQuestion)}</p>
+                            </div>
+                            <span className="status-badge">
+                              {askDatasetResult.row_count} rows | Limit {askDatasetResult.row_limit || sqlRowLimit}
+                            </span>
+                          </div>
+
+                          <div className="glass-card">
+                            <div className="glass-card-header">
+                              <span className="glass-card-title"><DollarSign size={16} /> Visual Answer</span>
+                              <div className="plot-option-row" style={{ margin: 0 }}>
+                                {['auto', 'bar', 'line'].map(type => (
+                                  <button key={type} className={`chip-btn ${askDatasetChartType === type ? 'active' : ''}`} onClick={() => setAskDatasetChartType(type)}>
+                                    {type === 'auto' ? 'Auto' : type}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="report-chart-wrap">{renderAskDatasetChart()}</div>
+                          </div>
+
+                          <div className="glass-card">
+                            <div className="glass-card-header">
+                              <span className="glass-card-title"><Info size={16} /> SQL Explanation</span>
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>{askDatasetExplanation}</p>
+                          </div>
+                        </>
+                      )}
+
+                      {askDatasetSql && (
+                        <div className="glass-card">
+                          <div className="glass-card-header">
+                            <span className="glass-card-title"><Terminal size={16} /> Generated SQL</span>
+                            <div className="sql-action-row">
+                              {renderRowLimitSelect()}
+                              <button className="btn btn-secondary btn-small" onClick={() => handleCopy(askDatasetSql)}>
+                                {copiedQuery === askDatasetSql ? <Check size={12} /> : <Copy size={12} />} Copy
+                              </button>
+                              <button className="btn btn-primary btn-small" onClick={handleRunAskDatasetSql} disabled={askDatasetLoading}>
+                                <Play size={12} /> Run SQL
+                              </button>
+                            </div>
+                          </div>
+                          <pre className="code-block">{askDatasetSql}</pre>
+                        </div>
+                      )}
+
+                      {askDatasetResult?.success && (
+                        <div className="glass-card">
+                          <div className="glass-card-header">
+                            <span className="glass-card-title"><Database size={16} /> Result Data</span>
+                          </div>
+                          <div className="table-container sql-result-table">
+                            <table className="custom-table">
+                              <thead>
+                                <tr>{askDatasetResult.columns?.map((col, idx) => <th key={idx}>{col}</th>)}</tr>
+                              </thead>
+                              <tbody>
+                                {askDatasetResult.data?.map((row, rIdx) => (
+                                  <tr key={rIdx}>
+                                    {askDatasetResult.columns?.map((col, cIdx) => (
+                                      <td key={cIdx} title={String(row[col] ?? '')}>{String(row[col] ?? '')}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {askDatasetResult && !askDatasetResult.success && (
+                        <div className="glass-card" style={{ borderColor: 'var(--accent-red)', backgroundColor: 'rgba(255,82,100,0.05)' }}>
+                          <div style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                            <AlertCircle size={14} /> Ask Dataset Error
+                          </div>
+                          <div style={{ fontSize: '12px', fontFamily: 'var(--font-family-mono)', color: 'var(--text-secondary)' }}>{askDatasetResult.error}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {analystStudioTab === 'report' && (
+                <div className="panel-body analyst-report-body">
+                  <div className="glass-card report-builder-card">
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><Sparkles size={16} /> Natural Language Report Builder</span>
+                      {renderRowLimitSelect()}
+                    </div>
+                    <form onSubmit={handleBuildReport} className="report-builder-form">
+                      <textarea
+                        className="form-input report-prompt-input"
+                        placeholder="Describe the report you want. Example: show monthly revenue trend by region, or top 10 customers by order amount."
+                        value={reportPrompt}
+                        onChange={(e) => setReportPrompt(e.target.value)}
+                      />
+                      <div className="report-builder-actions">
+                        <div className="status-badge">
+                          Context: {activeDb || 'No DB'} / {activeSchema || 'No Schema'} {activeTable ? `/ ${activeTable}` : ''}
+                        </div>
+                        <button className="btn btn-primary btn-small" type="submit" disabled={reportGenerating || !reportPrompt.trim()}>
+                          {reportGenerating ? 'Building...' : 'Build Report'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {reportSql && (
+                    <div className="glass-card">
+                      <div className="glass-card-header">
+                        <span className="glass-card-title"><Terminal size={16} /> Generated SQL</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button className="btn btn-secondary btn-small" onClick={() => handleCopy(reportSql)}>
+                            {copiedQuery === reportSql ? <Check size={12} /> : <Copy size={12} />}
+                          </button>
+                          <button className="btn btn-secondary btn-small" onClick={handleBuildReport} disabled={reportGenerating}>
+                            <Sparkles size={12} /> Regenerate
+                          </button>
+                          <button className="btn btn-primary btn-small" onClick={handleRunReportSql} disabled={reportGenerating}>
+                            <Play size={12} /> Run SQL
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="code-block">{reportSql}</pre>
+                    </div>
+                  )}
+
+                  {reportData?.success && (
+                    <div className="glass-card">
+                      <div className="glass-card-header">
+                        <span className="glass-card-title"><DollarSign size={16} /> {reportTitle}</span>
+                        <div className="plot-option-row" style={{ margin: 0 }}>
+                          {['auto', 'bar', 'line'].map(type => (
+                            <button key={type} className={`chip-btn ${reportChartType === type ? 'active' : ''}`} onClick={() => setReportChartType(type)}>
+                              {type === 'auto' ? 'Auto' : type}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="report-chart-wrap">{renderReportChart()}</div>
+                    </div>
+                  )}
+
+                  {reportData && !reportData.success && (
+                    <div className="glass-card" style={{ borderColor: 'var(--accent-red)', backgroundColor: 'rgba(255,82,100,0.05)' }}>
+                      <div style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                        <AlertCircle size={14} /> Report Builder Error
+                      </div>
+                      <div style={{ fontSize: '12px', fontFamily: 'var(--font-family-mono)', color: 'var(--text-secondary)' }}>{reportData.error}</div>
+                    </div>
+                  )}
+
+                  {reportData?.success && (
+                    <div className="glass-card">
+                      <div className="glass-card-header">
+                        <span className="glass-card-title"><Database size={16} /> Report Data</span>
+                        <span className="status-badge">{reportData.row_count} rows shown | Limit {reportData.row_limit || sqlRowLimit}</span>
+                      </div>
+                      <div className="table-container report-data-table">
+                        <table className="custom-table">
+                          <thead>
+                            <tr>{reportData.columns?.map((col, idx) => <th key={idx}>{col}</th>)}</tr>
+                          </thead>
+                          <tbody>
+                            {reportData.data?.map((row, rIdx) => (
+                              <tr key={rIdx}>
+                                {reportData.columns?.map((col, cIdx) => <td key={cIdx}>{String(row[col] ?? '')}</td>)}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
           )}
 
           {/* TAB 2: SQL Explainer / Performance Tuning */}
           {activeTab === 'sql' && (
             <div className="panel-body">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {/* Query Input */}
-                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="glass-card-header">
-                    <span className="glass-card-title"><Terminal size={16} /> SQL Input Console</span>
-                    <button className="btn btn-primary btn-small" onClick={handleOptimizeSql} disabled={optimizing}>
-                      {optimizing ? 'Analyzing Query...' : 'Optimize & Explain SQL'}
-                    </button>
+              <div className="sql-tuning-layout">
+                <div className="sql-input-column">
+                  {/* Query Input */}
+                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><Terminal size={16} /> SQL Input Console</span>
+                      <div className="sql-action-row">
+                        <button className="btn btn-primary btn-small" onClick={handleAnalyzeAndOptimizeSql} disabled={(optimizing || analyzingCost) || !sqlQuery.trim()}>
+                          <Sparkles size={12} /> {(optimizing || analyzingCost) ? 'Analyzing SQL...' : 'Analyze & Optimize SQL'}
+                        </button>
+                      </div>
+                    </div>
+                    <textarea 
+                      className="form-input" 
+                      style={{ height: '300px', fontFamily: 'var(--font-family-mono)', fontSize: '13px', resize: 'none', lineHeight: '1.5', padding: '14px' }}
+                      value={sqlQuery}
+                      onChange={(e) => setSqlQuery(e.target.value)}
+                    />
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      Paste any standard Snowflake SQL query. The AI Engine will review joins, scan scopes, partition pruning options, and compute suggestions.
+                    </div>
                   </div>
-                  <textarea 
-                    className="form-input" 
-                    style={{ height: '300px', fontFamily: 'var(--font-family-mono)', fontSize: '13px', resize: 'none', lineHeight: '1.5', padding: '14px' }}
-                    value={sqlQuery}
-                    onChange={(e) => setSqlQuery(e.target.value)}
-                  />
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    Paste any standard Snowflake SQL query. The AI Engine will review joins, scan scopes, partition pruning options, and compute suggestions.
-                  </div>
-                </div>
 
-                {/* Optimization Report Output */}
-                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Optimization Report Output */}
+                  <div className="glass-card sql-optimizer-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div className="glass-card-header">
                     <span className="glass-card-title"><Sparkles size={16} color="var(--accent-cyan)" /> AI Performance Optimization Report</span>
                   </div>
@@ -1507,32 +3765,1315 @@ function App() {
                       </div>
 
                       <div>
-                        <div className="code-header" style={{ color: 'var(--accent-cyan)' }}>OPTIMIZED SQL SUGGESTION</div>
                         <div className="code-container" style={{ margin: 0 }}>
-                          <button 
-                            className="btn btn-secondary btn-small"
-                            style={{ position: 'absolute', right: '10px', top: '10px', padding: '2px 6px' }}
-                            onClick={() => handleCopy(sqlOptimization.optimized_sql)}
-                          >
-                            {copiedQuery === sqlOptimization.optimized_sql ? 'Copied!' : 'Copy'}
-                          </button>
-                          <div className="code-block">{sqlOptimization.optimized_sql}</div>
+                          <div className="code-header" style={{ color: 'var(--accent-cyan)' }}>
+                            <span>OPTIMIZED SQL SUGGESTION</span>
+                            {renderSqlActionButtons(sqlOptimization.optimized_sql, 'Optimized SQL Results', { inline: true })}
+                          </div>
+                          <pre className="code-block">{sqlOptimization.optimized_sql}</pre>
+                          {renderSqlInlinePreview(sqlOptimization.optimized_sql, 'Optimized SQL Results')}
                         </div>
                       </div>
                     </div>
                   )}
+                  </div>
+                </div>
+
+                <div className="sql-analysis-results">
+                  {/* Cost Advisor Output */}
+                  <div className="glass-card sql-advisor-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><DollarSign size={16} color="var(--accent-green)" /> Cost-Aware Query Advisor</span>
+                    {sqlCostAdvisor?.risk_level && <span className={`confidence-badge ${sqlCostAdvisor.risk_level.toLowerCase()}`}>{sqlCostAdvisor.risk_level} Risk</span>}
+                  </div>
+
+                  {!sqlCostAdvisor && !analyzingCost && (
+                    <div className="empty-state">Analyze cost before execution to estimate scan size, risk, and cheaper alternatives.</div>
+                  )}
+
+                  {analyzingCost && (
+                    <div className="empty-state">Estimating scan exposure and optimization opportunities...</div>
+                  )}
+
+                  {sqlCostAdvisor?.success === false && (
+                    <div className="empty-state">{sqlCostAdvisor.error}</div>
+                  )}
+
+                  {sqlCostAdvisor?.success && (
+                    <div className="sql-advisor-content">
+                      <div className="sql-advisor-kpis">
+                        <div className="mini-card">
+                          <div className="mini-card-title">Estimated Scan</div>
+                          <span className="stat-value">{sqlCostAdvisor.estimated_scan_label || `${sqlCostAdvisor.estimated_scan_gb}GB`}</span>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Estimated Cost</div>
+                          <span className="stat-value green">{sqlCostAdvisor.estimated_cost_label || `$${sqlCostAdvisor.estimated_cost_usd}`}</span>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Potential Reduction</div>
+                          <span className="stat-value purple">{sqlCostAdvisor.estimated_reduction_pct}%</span>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Optimized Cost</div>
+                          <span className="stat-value">{sqlCostAdvisor.optimized_cost_label || `$${sqlCostAdvisor.optimized_cost_usd}`}</span>
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">Advisor Summary</div>
+                        <p>This query may scan about {sqlCostAdvisor.estimated_scan_label || `${sqlCostAdvisor.estimated_scan_gb}GB`} (~{sqlCostAdvisor.estimated_cost_label || `$${sqlCostAdvisor.estimated_cost_usd}`}). Suggested changes may reduce scan exposure by about {sqlCostAdvisor.estimated_reduction_pct}%, toward {sqlCostAdvisor.optimized_scan_label || `${sqlCostAdvisor.optimized_scan_gb}GB`} (~{sqlCostAdvisor.optimized_cost_label || `$${sqlCostAdvisor.optimized_cost_usd}`}).</p>
+                        <p>{sqlCostAdvisor.cache_note}</p>
+                      </div>
+
+                      <div className="workbench-grid">
+                        <div className="mini-card">
+                          <div className="mini-card-title">Findings</div>
+                          <ul className="advisor-list">{sqlCostAdvisor.findings?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Cheaper Alternatives</div>
+                          <ul className="advisor-list">{sqlCostAdvisor.alternatives?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">Cost-Aware SQL Suggestion</div>
+                        <div className="code-container">
+                          <div className="code-header">
+                            <span>Suggested safer SQL</span>
+                            {renderSqlActionButtons(sqlCostAdvisor.optimized_sql, 'Cost Advisor SQL Results', { inline: true })}
+                          </div>
+                          <pre className="code-block">{sqlCostAdvisor.optimized_sql}</pre>
+                          {renderSqlInlinePreview(sqlCostAdvisor.optimized_sql, 'Cost Advisor SQL Results')}
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">Assumptions</div>
+                        <ul className="advisor-list">{sqlCostAdvisor.assumptions?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                      </div>
+                    </div>
+                  )}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
+          {activeTab === 'tableDetails' && (
+            <div className="panel-body table-intelligence-page">
+              <div className="glass-card table-intelligence-control">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Database size={16} /> Table Intelligence Studio</span>
+                </div>
+                {renderWorkbenchScope('tableDetails')}
+              </div>
+
+              {tableDetailsData ? (
+                <div className="glass-card table-intelligence-content">
+                  {renderWorkbenchTabs([
+                    { id: 'overview', label: 'Overview' },
+                    { id: 'details', label: 'Table Details' },
+                    { id: 'profiler', label: 'Table Profiler' },
+                    { id: 'volumeAnalyzer', label: 'Volume Analyzer' },
+                    { id: 'insights', label: 'Insight Generator' },
+                    { id: 'ddl', label: 'Generated DDL' },
+                    { id: 'queries', label: 'Quick Queries' }
+                  ], tableDetailsTab, setTableDetailsTab)}
+
+                  {tableDetailsTab === 'overview' && (
+                    <div className="table-intelligence-overview">
+                      <div className="mini-card table-intelligence-object-card">
+                        <div className="mini-card-title">Selected Object</div>
+                        <p className="object-path">{appScopes.tableDetails.database}.{appScopes.tableDetails.schema}.{appScopes.tableDetails.table}</p>
+                      </div>
+                      <div className="mini-card table-intelligence-kpi-card">
+                        <div className="mini-card-title">Columns</div>
+                        <span className="stat-value">{tableDetailsData.columns?.length || profilerData?.summary?.columns || 0}</span>
+                        <button className="btn btn-secondary btn-small" onClick={() => setTableDetailsTab('details')}>Open Details</button>
+                      </div>
+                      <div className="mini-card table-intelligence-kpi-card">
+                        <div className="mini-card-title">Profiled Rows</div>
+                        <span className={`stat-value ${profilerData ? '' : 'pending'}`}>{profilerData?.summary?.total_rows ?? 'Not Run'}</span>
+                        <button className="btn btn-secondary btn-small" onClick={() => setTableDetailsTab('profiler')}>Open Profiler</button>
+                      </div>
+                      <div className="mini-card table-intelligence-kpi-card">
+                        <div className="mini-card-title">High Null Columns</div>
+                        <span className="stat-value red">{profilerData?.summary?.high_null_columns ?? '-'}</span>
+                      </div>
+                      <div className="mini-card table-intelligence-kpi-card">
+                        <div className="mini-card-title">Empty Columns</div>
+                        <span className="stat-value purple">{profilerData?.summary?.empty_columns ?? '-'}</span>
+                      </div>
+                      <div className="mini-card table-intelligence-status-card">
+                        <div className="mini-card-title">Insight Status</div>
+                        <p>{tableInsightsData ? `${tableInsightsData.insights?.length || 0} insights are ready with ${tableInsightsData.recommended_sql?.length || 0} follow-up SQL snippets.` : 'Open Insight Generator when you want trends, KPI signals, anomaly candidates, correlations, and likely PII.'}</p>
+                        <button className="btn btn-secondary btn-small" onClick={() => setTableDetailsTab('insights')}>Open Insights</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'details' && (
+                    <div className="table-intelligence-sections">
+                      <div className="tab-action-bar">
+                        <div>
+                          <div className="mini-card-title">Table Details</div>
+                          <p>Refresh metadata, sample rows, AI descriptions, DDL, and quick SQL for the selected table.</p>
+                        </div>
+                        <button className="btn btn-primary btn-small" onClick={runTableDetails} disabled={workbenchLoading.tableDetails}>
+                          {workbenchLoading.tableDetails ? 'Loading...' : 'Load Details'}
+                        </button>
+                      </div>
+                      <div className="mini-card">
+                        <div className="mini-card-title">Column Metadata</div>
+                        <div className="table-container">
+                          <table className="custom-table">
+                            <thead>
+                              <tr>
+                                <th>Column</th>
+                                <th>Type</th>
+                                <th>Nullable</th>
+                                <th>Max Length</th>
+                                <th>Precision</th>
+                                <th>Comment</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tableDetailsData.columns?.map((col, idx) => (
+                                <tr key={idx}>
+                                  <td style={{ fontWeight: 700 }}>{col.COLUMN_NAME}</td>
+                                  <td>{col.DATA_TYPE}</td>
+                                  <td>{col.IS_NULLABLE}</td>
+                                  <td>{col.CHARACTER_MAXIMUM_LENGTH || '-'}</td>
+                                  <td>{col.NUMERIC_PRECISION || '-'}</td>
+                                  <td style={{ whiteSpace: 'normal' }}>{col.COMMENT || col.DESCRIPTION || '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">Sample Rows</div>
+                        <div className="table-container">
+                          {tableDetailsData.sample_rows?.length > 0 ? (
+                            <table className="custom-table">
+                              <thead>
+                                <tr>{Object.keys(tableDetailsData.sample_rows[0]).map(col => <th key={col}>{col}</th>)}</tr>
+                              </thead>
+                              <tbody>
+                                {tableDetailsData.sample_rows.slice(0, 10).map((row, idx) => (
+                                  <tr key={idx}>{Object.keys(row).map(col => <td key={col}>{String(row[col] ?? '')}</td>)}</tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="empty-state">No sample rows returned.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">AI Descriptions</div>
+                        <div className="workbench-grid">
+                          {tableDetailsData.ai_descriptions?.map((item, idx) => (
+                            <div key={idx} className="mini-card">
+                              <div className="mini-card-title">{item.column_name}</div>
+                              <span className="status-badge">{item.label}</span>
+                              <p>{item.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'profiler' && (
+                    profilerData ? (
+                      <div className="table-intelligence-sections">
+                        <div className="tab-action-bar">
+                          <div>
+                            <div className="mini-card-title">Table Profiler</div>
+                            <p>Run profiling when you need row counts, null rates, DQ checks, labels, and volume plots.</p>
+                          </div>
+                          <button className="btn btn-primary btn-small" onClick={runProfiler} disabled={workbenchLoading.profiler}>
+                            <ShieldCheck size={13} /> {workbenchLoading.profiler ? 'Profiling...' : 'Run Profile'}
+                          </button>
+                        </div>
+                        <div className="stat-grid">
+                          <div className="glass-card stat-card"><span className="stat-label">Total Rows</span><span className="stat-value">{profilerData.summary?.total_rows}</span></div>
+                          <div className="glass-card stat-card"><span className="stat-label">Columns</span><span className="stat-value">{profilerData.summary?.columns}</span></div>
+                          <div className="glass-card stat-card"><span className="stat-label">High Null Columns</span><span className="stat-value red">{profilerData.summary?.high_null_columns}</span></div>
+                          <div className="glass-card stat-card"><span className="stat-label">Empty Columns</span><span className="stat-value purple">{profilerData.summary?.empty_columns}</span></div>
+                        </div>
+
+                        <div className="mini-card">
+                          <div className="mini-card-title">Column Statistics</div>
+                          <div className="table-container">
+                            <table className="custom-table">
+                              <thead><tr><th>Column</th><th>Type</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Label</th></tr></thead>
+                              <tbody>
+                                {profilerData.column_stats?.map((row, idx) => (
+                                  <tr key={idx}><td>{row.column_name}</td><td>{row.data_type}</td><td>{row.null_pct}%</td><td>{row.distinct_count}</td><td>{String(row.min ?? '-')}</td><td>{String(row.max ?? '-')}</td><td><span className="status-badge">{row.label}</span></td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div className="mini-card">
+                          <div className="mini-card-title">Volume Analysis</div>
+                          <div className="profiler-volume-panel">
+                            {profilerData.volume_analysis?.length > 0 ? (
+                              <>
+                                <div className="plot-option-row">
+                                  <span>Plot:</span>
+                                  {[
+                                    { id: 'daily', label: 'Daily Trend' },
+                                    { id: 'monthly', label: 'Monthly' },
+                                    { id: 'weekday', label: 'Day of Week' },
+                                    { id: 'hourly', label: 'Hourly' }
+                                  ].filter(option => (profilerData.volume_breakdown?.[option.id] || []).length > 0).map(option => (
+                                    <button
+                                      key={option.id}
+                                      className={`chip-btn ${profilerVolumePlot === option.id ? 'active' : ''}`}
+                                      onClick={() => setProfilerVolumePlot(option.id)}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {renderProfilerVolumeChart(
+                                  (profilerData.volume_breakdown?.[profilerVolumePlot] || []).length > 0 ? profilerData.volume_breakdown?.[profilerVolumePlot] : profilerData.volume_analysis,
+                                  (profilerData.volume_breakdown?.[profilerVolumePlot] || []).length > 0 ? profilerVolumePlot : 'daily'
+                                )}
+                              </>
+                            ) : (
+                              <div className="empty-state">No date/time column found for volume analysis.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mini-card">
+                          <div className="mini-card-title">AI Health Report</div>
+                          <p style={{ fontSize: '14px', lineHeight: 1.6 }}>{profilerData.health_report}</p>
+                        </div>
+
+                        <div className="mini-card">
+                          <div className="mini-card-title">DQ SQL Checks</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {profilerData.dq_checks?.length > 0 ? profilerData.dq_checks.map((check, idx) => (
+                              <div key={idx} className="mini-card">
+                                <div className="mini-card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                                  <span>{check.check}</span>
+                                  {renderSqlActionButtons(check.sql, check.check, { inline: true })}
+                                </div>
+                                <pre className="code-block">{check.sql}</pre>
+                                {renderSqlInlinePreview(check.sql, check.check)}
+                              </div>
+                            )) : <div className="empty-state">No obvious identifier or amount checks were generated for this table.</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="tab-empty-action">
+                        <div className="empty-state">Run Profile to calculate row counts, column statistics, health report, DQ checks, labels, and volume plots.</div>
+                        <button className="btn btn-primary btn-small" onClick={runProfiler} disabled={workbenchLoading.profiler}>
+                          <ShieldCheck size={13} /> {workbenchLoading.profiler ? 'Profiling...' : 'Run Profile'}
+                        </button>
+                      </div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'volumeAnalyzer' && (() => {
+                    const dateColumns = getTableDateColumns();
+                    const selectedDateColumn = volumeAnalyzerColumn || dateColumns[0] || '';
+                    const anomalyRows = volumeAnalyzerData?.rows || [];
+                    const summary = volumeAnalyzerData?.summary || {};
+                    const modeLabel = volumeAnalyzerMode === 'event' ? 'Event Volume & Throughput' : 'Batch Volume & Run Pattern';
+                    const unitLabel = volumeAnalyzerGranularity === 'hour' ? 'Hour' : volumeAnalyzerGranularity === 'month' ? 'Month' : volumeAnalyzerGranularity === 'week' ? 'Week' : 'Day';
+                    return (
+                      <div className="table-intelligence-sections volume-analyzer-workspace">
+                        <div className="tab-action-bar volume-analyzer-action-bar">
+                          <div>
+                            <div className="mini-card-title">{modeLabel}</div>
+                            <p>Choose whether the selected field represents streaming events or scheduled batch loads, then analyze throughput and peak/drop behavior.</p>
+                          </div>
+                        </div>
+
+                        <div className="volume-analyzer-control-grid">
+                          <div className="volume-control-field">
+                            <span>Field Type</span>
+                            <div className="segmented-control">
+                              {[
+                                { id: 'event', label: 'Event' },
+                                { id: 'batch', label: 'Batch' }
+                              ].map(option => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className={volumeAnalyzerMode === option.id ? 'active' : ''}
+                                  onClick={() => handleVolumeAnalyzerModeChange(option.id)}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="volume-control-field volume-date-field">
+                            <SearchableSelect
+                              value={selectedDateColumn}
+                              onChange={(value) => {
+                                setVolumeAnalyzerColumn(value);
+                                setVolumeAnalyzerData(null);
+                              }}
+                              options={dateColumns}
+                              placeholder="Select Date Field"
+                              label="DATE FIELD"
+                              className="workbench-table-select volume-date-select"
+                            />
+                          </div>
+                          <label className="volume-control-field">
+                            <span>Time Window</span>
+                            <select className="form-input" value={volumeAnalyzerTimeWindow} onChange={(e) => { setVolumeAnalyzerTimeWindow(e.target.value); setVolumeAnalyzerData(null); }}>
+                              <option value="24h">Last 24 hours</option>
+                              <option value="7d">Last 7 days</option>
+                              <option value="30d">Last 30 days</option>
+                              <option value="90d">Last 90 days</option>
+                              <option value="all">All time</option>
+                            </select>
+                          </label>
+                          <label className="volume-control-field">
+                            <span>Granularity</span>
+                            <select className="form-input" value={volumeAnalyzerGranularity} onChange={(e) => { setVolumeAnalyzerGranularity(e.target.value); setVolumeAnalyzerData(null); }}>
+                              <option value="hour">Hour</option>
+                              <option value="day">Day</option>
+                              <option value="week">Week</option>
+                              <option value="month">Month</option>
+                            </select>
+                          </label>
+                          <button className="btn btn-primary btn-small volume-load-button" onClick={runVolumeAnalyzer} disabled={workbenchLoading.volumeAnalyzer || dateColumns.length === 0}>
+                            <AlertTriangle size={13} /> {workbenchLoading.volumeAnalyzer ? 'Loading Analytics...' : 'Load Analytics'}
+                          </button>
+                        </div>
+
+                        {dateColumns.length === 0 && (
+                          <div className="empty-state">No date or timestamp columns were found for this table.</div>
+                        )}
+
+                        {volumeAnalyzerData?.error && (
+                          <div className="empty-state">{volumeAnalyzerData.error}</div>
+                        )}
+
+                        {!volumeAnalyzerData && dateColumns.length > 0 && (
+                          <div className="tab-empty-action">
+                            <div className="empty-state">Load analytics to plot {volumeAnalyzerMode === 'event' ? 'event throughput' : 'batch volume'} and flag peak/drop anomalies for {selectedDateColumn}.</div>
+                            <button className="btn btn-primary btn-small" onClick={runVolumeAnalyzer} disabled={workbenchLoading.volumeAnalyzer}>
+                              <AlertTriangle size={13} /> {workbenchLoading.volumeAnalyzer ? 'Loading Analytics...' : 'Load Analytics'}
+                            </button>
+                          </div>
+                        )}
+
+                        {volumeAnalyzerData && !volumeAnalyzerData.error && (
+                          <>
+                            <div className="volume-kpi-strip">
+                              <div>
+                                <span>Total {volumeAnalyzerMode === 'event' ? 'Events' : 'Rows'}</span>
+                                <strong>{(summary.total_events ?? 0).toLocaleString()}</strong>
+                              </div>
+                              <div>
+                                <span>Avg / {unitLabel}</span>
+                                <strong>{summary.avg_bucket_rows ?? 0}</strong>
+                              </div>
+                              <div>
+                                <span>First {volumeAnalyzerMode === 'event' ? 'Event' : 'Run'}</span>
+                                <strong>{formatVolumeTimestamp(summary.first_event, volumeAnalyzerGranularity)}</strong>
+                              </div>
+                              <div>
+                                <span>Last {volumeAnalyzerMode === 'event' ? 'Event' : 'Run'}</span>
+                                <strong>{formatVolumeTimestamp(summary.last_event, volumeAnalyzerGranularity)}</strong>
+                              </div>
+                              <div>
+                                <span>Peak / Drop</span>
+                                <strong>{summary.peak_count ?? 0} / {summary.drop_count ?? 0}</strong>
+                              </div>
+                            </div>
+
+                            <div className="volume-analytics-card">
+                              <div className="volume-chart-header">
+                                <div>
+                                  <div className="mini-card-title">{volumeAnalyzerMode === 'event' ? 'Events' : 'Rows'} per {unitLabel}</div>
+                                  <p>{unitLabel} buckets for {volumeAnalyzerTimeWindow === 'all' ? 'all time' : volumeAnalyzerTimeWindow}; red marks indicate MAD peak/drop anomalies.</p>
+                                </div>
+                                <div className="plot-option-row">
+                                  <span>Chart type:</span>
+                                  {['bar', 'line', 'area', 'scatter'].map(type => (
+                                    <button key={type} className={`chip-btn ${volumeAnalyzerChartType === type ? 'active' : ''}`} onClick={() => setVolumeAnalyzerChartType(type)}>
+                                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="section-note">
+                                Method: {summary.method} on {summary.date_column}; threshold {summary.threshold}.
+                              </p>
+                              {renderVolumeThroughputChart(volumeAnalyzerData, volumeAnalyzerChartType)}
+                              <div className="anomaly-legend">
+                                <span><i className="legend-dot critical"></i>Peak/drop anomaly</span>
+                                <span><i className="legend-line cyan"></i>{volumeAnalyzerMode === 'event' ? 'Event count' : 'Batch row count'}</span>
+                              </div>
+                            </div>
+
+                            <div className="volume-analytics-card">
+                              <div className="volume-chart-header">
+                                <div>
+                                  <div className="mini-card-title">Peak {volumeAnalyzerMode === 'event' ? 'Event' : 'Batch'} Heatmap</div>
+                                  <p>Hour of day by day of week, useful for finding bursty producers, quiet windows, missed runs, and recurring spikes.</p>
+                                </div>
+                                <div className="plot-option-row">
+                                  <span>Chart type:</span>
+                                  {[
+                                    { id: 'heatmap', label: 'Heatmap' },
+                                    { id: 'dayBar', label: 'Bar by Day' },
+                                    { id: 'hourBar', label: 'Bar by Hour' },
+                                    { id: 'bubble', label: 'Bubble' }
+                                  ].map(option => (
+                                    <button
+                                      key={option.id}
+                                      className={`chip-btn ${volumeAnalyzerHeatmapType === option.id ? 'active' : ''}`}
+                                      onClick={() => setVolumeAnalyzerHeatmapType(option.id)}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              {renderVolumePeakPatternChart(volumeAnalyzerData, volumeAnalyzerHeatmapType)}
+                            </div>
+
+                            <div className="mini-card">
+                              <div className="mini-card-title">Flagged Buckets</div>
+                              <div className="table-container">
+                                {anomalyRows.length > 0 ? (
+                                  <table className="custom-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Bucket</th>
+                                        <th>Rows</th>
+                                        <th>Rolling Median</th>
+                                        <th>MAD</th>
+                                        <th>Modified Z</th>
+                                        <th>Direction</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {anomalyRows.map((row, idx) => (
+                                        <tr key={idx}>
+                                          <td>{formatVolumeTimestamp(getKeyValue(row, 'ACTIVITY_BUCKET') || getKeyValue(row, 'ACTIVITY_DATE'), volumeAnalyzerGranularity)}</td>
+                                          <td>{getKeyValue(row, 'ROW_COUNT')}</td>
+                                          <td>{getKeyValue(row, 'ROLLING_MEDIAN')}</td>
+                                          <td>{getKeyValue(row, 'MAD')}</td>
+                                          <td>{getKeyValue(row, 'MODIFIED_Z')}</td>
+                                          <td><span className={`status-badge ${String(getKeyValue(row, 'DIRECTION')).toLowerCase()}`}>{getKeyValue(row, 'DIRECTION') || 'anomaly'}</span></td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div className="empty-state">No peak/drop anomalies found for the selected field and time window.</div>
+                                )}
+                              </div>
+                            </div>
+
+                            {volumeAnalyzerData.sql && (
+                              <div className="mini-card">
+                                <div className="mini-card-title sql-card-title">
+                                  <span>Bucketed Count SQL</span>
+                                  {renderSqlActionButtons(volumeAnalyzerData.sql, 'Volume Analyzer Bucketed Counts', { inline: true })}
+                                </div>
+                                <pre className="code-block">{volumeAnalyzerData.sql}</pre>
+                                {renderSqlInlinePreview(volumeAnalyzerData.sql, 'Volume Analyzer Bucketed Counts')}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {tableDetailsTab === 'insights' && (
+                    tableInsightsData ? (
+                      <div className="table-intelligence-sections">
+                        <div className="tab-action-bar">
+                          <div>
+                            <div className="mini-card-title">Insight Generator</div>
+                            <p>Generate analyst-style findings such as trends, KPI summaries, anomaly candidates, correlations, and likely sensitive fields.</p>
+                          </div>
+                          <button className="btn btn-primary btn-small" onClick={runTableInsights} disabled={workbenchLoading.insights}>
+                            <Sparkles size={13} /> {workbenchLoading.insights ? 'Generating...' : 'Generate Insights'}
+                          </button>
+                        </div>
+                        {tableInsightsData.error && (
+                          <div className="empty-state">{tableInsightsData.error}</div>
+                        )}
+                        <div className="table-insight-summary">
+                          <div className="mini-card">
+                            <div className="mini-card-title">Rows</div>
+                            <span className="stat-value">{tableInsightsData.summary?.row_count ?? '-'}</span>
+                          </div>
+                          <div className="mini-card">
+                            <div className="mini-card-title">Numeric Columns</div>
+                            <span className="stat-value">{tableInsightsData.summary?.numeric_columns ?? '-'}</span>
+                          </div>
+                          <div className="mini-card">
+                            <div className="mini-card-title">Date Columns</div>
+                            <span className="stat-value green">{tableInsightsData.summary?.date_columns ?? '-'}</span>
+                          </div>
+                          <div className="mini-card">
+                            <div className="mini-card-title">Likely PII</div>
+                            <span className="stat-value purple">{tableInsightsData.summary?.pii_columns ?? '-'}</span>
+                          </div>
+                        </div>
+
+                        <div className="table-insight-grid">
+                          {tableInsightsData.insights?.map((insight, idx) => (
+                            <div key={idx} className="mini-card insight-card">
+                              <div className="insight-card-header">
+                                <span className="status-badge">{insight.category}</span>
+                                <span className={`confidence-badge ${String(insight.confidence || '').toLowerCase()}`}>{insight.confidence || 'Signal'}</span>
+                              </div>
+                              <div className="mini-card-title">{insight.title}</div>
+                              <p>{insight.summary}</p>
+                              {insight.data?.length > 0 && (
+                                <div className="insight-mini-list">
+                                  {insight.data.slice(0, 5).map((item, itemIdx) => (
+                                    <span key={itemIdx}>{item.column || item.VALUE || item.value || item.PERIOD || item.period}: {item.reason || item.ROW_COUNT || item.row_count || item.label || ''}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {insight.sql && (
+                                <div className="code-container insight-sql">
+                                  <div className="insight-sql-header">
+                                    <span>SQL</span>
+                                    {renderSqlActionButtons(insight.sql, insight.title, { inline: true })}
+                                  </div>
+                                  <pre className="code-block">{insight.sql}</pre>
+                                  {renderSqlInlinePreview(insight.sql, insight.title)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mini-card">
+                          <div className="mini-card-title">Recommended Follow-Up SQL</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {tableInsightsData.recommended_sql?.length > 0 ? tableInsightsData.recommended_sql.map((item, idx) => (
+                              <div key={idx} className="mini-card">
+                                <div className="mini-card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                                  <span>{item.label}</span>
+                                  {renderSqlActionButtons(item.sql, item.label, { inline: true })}
+                                </div>
+                                <pre className="code-block">{item.sql}</pre>
+                                {renderSqlInlinePreview(item.sql, item.label)}
+                              </div>
+                            )) : <div className="empty-state">No follow-up SQL generated yet.</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="tab-empty-action">
+                        <div className="empty-state">
+                          Generate insights to discover trends, anomalies, correlations, KPI summaries, likely PII, and suggested follow-up SQL for this table.
+                        </div>
+                        <button className="btn btn-primary btn-small" onClick={runTableInsights} disabled={workbenchLoading.insights}>
+                          <Sparkles size={13} /> {workbenchLoading.insights ? 'Generating...' : 'Generate Insights'}
+                        </button>
+                      </div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'columns' && (
+                    <div className="table-container">
+                      <table className="custom-table">
+                        <thead>
+                          <tr>
+                            <th>Column</th>
+                            <th>Type</th>
+                            <th>Nullable</th>
+                            <th>Max Length</th>
+                            <th>Precision</th>
+                            <th>Comment</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableDetailsData.columns?.map((col, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 700 }}>{col.COLUMN_NAME}</td>
+                              <td>{col.DATA_TYPE}</td>
+                              <td>{col.IS_NULLABLE}</td>
+                              <td>{col.CHARACTER_MAXIMUM_LENGTH || '-'}</td>
+                              <td>{col.NUMERIC_PRECISION || '-'}</td>
+                              <td style={{ whiteSpace: 'normal' }}>{col.COMMENT || col.DESCRIPTION || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'sample' && (
+                    <div className="table-container">
+                      {tableDetailsData.sample_rows?.length > 0 ? (
+                        <table className="custom-table">
+                          <thead>
+                            <tr>{Object.keys(tableDetailsData.sample_rows[0]).map(col => <th key={col}>{col}</th>)}</tr>
+                          </thead>
+                          <tbody>
+                            {tableDetailsData.sample_rows.map((row, idx) => (
+                              <tr key={idx}>{Object.keys(row).map(col => <td key={col}>{String(row[col] ?? '')}</td>)}</tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="empty-state">No sample rows returned.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'stats' && (
+                    profilerData ? (
+                      <div className="table-container">
+                        <table className="custom-table">
+                          <thead><tr><th>Column</th><th>Type</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th></tr></thead>
+                          <tbody>
+                            {profilerData.column_stats?.map((row, idx) => (
+                              <tr key={idx}><td>{row.column_name}</td><td>{row.data_type}</td><td>{row.null_pct}%</td><td>{row.distinct_count}</td><td>{String(row.min ?? '-')}</td><td>{String(row.max ?? '-')}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="empty-state">Run Profile to calculate null percentages, distinct counts, min, and max values.</div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'health' && (
+                    profilerData ? (
+                      <div className="mini-card"><p style={{ fontSize: '14px', lineHeight: 1.6 }}>{profilerData.health_report}</p></div>
+                    ) : (
+                      <div className="empty-state">Run Profile to generate the AI health report.</div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'volume' && (
+                    profilerData ? (
+                      <div className="profiler-volume-panel">
+                        {profilerData.volume_analysis?.length > 0 ? (
+                          <>
+                            <div className="plot-option-row">
+                              <span>Plot:</span>
+                              {[
+                                { id: 'daily', label: 'Daily Trend' },
+                                { id: 'monthly', label: 'Monthly' },
+                                { id: 'weekday', label: 'Day of Week' },
+                                { id: 'hourly', label: 'Hourly' }
+                              ].filter(option => (profilerData.volume_breakdown?.[option.id] || []).length > 0).map(option => (
+                                <button
+                                  key={option.id}
+                                  className={`chip-btn ${profilerVolumePlot === option.id ? 'active' : ''}`}
+                                  onClick={() => setProfilerVolumePlot(option.id)}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                            {renderProfilerVolumeChart(
+                              (profilerData.volume_breakdown?.[profilerVolumePlot] || []).length > 0 ? profilerData.volume_breakdown?.[profilerVolumePlot] : profilerData.volume_analysis,
+                              (profilerData.volume_breakdown?.[profilerVolumePlot] || []).length > 0 ? profilerVolumePlot : 'daily'
+                            )}
+                            <div className="table-container">
+                              <table className="custom-table">
+                                <thead><tr><th>Date</th><th>Rows</th></tr></thead>
+                                <tbody>{profilerData.volume_analysis.map((row, idx) => <tr key={idx}><td>{String(row.ACTIVITY_DATE ?? row.activity_date ?? '')}</td><td>{row.ROW_COUNT ?? row.row_count}</td></tr>)}</tbody>
+                              </table>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="empty-state">No date/time column found for volume analysis.</div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="empty-state">Run Profile to build volume analysis and plots.</div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'checks' && (
+                    profilerData ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {profilerData.dq_checks?.length > 0 ? profilerData.dq_checks.map((check, idx) => (
+                          <div key={idx} className="mini-card">
+                            <div className="mini-card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                              <span>{check.check}</span>
+                              {renderSqlActionButtons(check.sql, check.check, { inline: true })}
+                            </div>
+                            <pre className="code-block">{check.sql}</pre>
+                            {renderSqlInlinePreview(check.sql, check.check)}
+                          </div>
+                        )) : <div className="empty-state">No obvious identifier or amount checks were generated for this table.</div>}
+                      </div>
+                    ) : (
+                      <div className="empty-state">Run Profile to generate basic data quality SQL checks.</div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'labels' && (
+                    profilerData ? (
+                      <div className="workbench-grid">
+                        {profilerData.column_labels?.map((item, idx) => (
+                          <div key={idx} className="mini-card"><div className="mini-card-title">{item.column_name}</div><span className="status-badge">{item.label}</span></div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state">Run Profile to assign column labels like PK, FK, Amount, Date, Flag, and Category.</div>
+                    )
+                  )}
+
+                  {tableDetailsTab === 'ai' && (
+                    <div className="workbench-grid">
+                      {tableDetailsData.ai_descriptions?.map((item, idx) => (
+                        <div key={idx} className="mini-card">
+                          <div className="mini-card-title">{item.column_name}</div>
+                          <span className="status-badge">{item.label}</span>
+                          <p>{item.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'ddl' && (
+                    <div className="code-container">
+                      <button className="btn btn-secondary btn-small" style={{ position: 'absolute', right: '10px', top: '10px' }} onClick={() => handleCopy(tableDetailsData.ddl)}>
+                        {copiedQuery === tableDetailsData.ddl ? 'Copied!' : 'Copy'}
+                      </button>
+                      <pre className="code-block">{tableDetailsData.ddl}</pre>
+                    </div>
+                  )}
+
+                  {tableDetailsTab === 'queries' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {tableDetailsData.quick_queries?.map((query, idx) => (
+                        <div key={idx} className="mini-card">
+                          <div className="code-header">{query.label}</div>
+                          <div className="code-container">
+                            <div style={{ position: 'absolute', right: '10px', top: '10px' }}>
+                              {renderSqlActionButtons(query.sql, query.label, { inline: true })}
+                            </div>
+                            <pre className="code-block">{query.sql}</pre>
+                            {renderSqlInlinePreview(query.sql, query.label)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state">Choose a database, schema, and table/view to load metadata, samples, DDL, descriptions, and quick SQL.</div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'catalogSearch' && (
+            <div className="panel-body">
+              <div className="glass-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Layers size={16} /> Column / Table Search</span>
+                  <button className="btn btn-primary btn-small" onClick={runCatalogSearch} disabled={workbenchLoading.search}>
+                    {workbenchLoading.search ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+                {renderWorkbenchScope('search', { includeType: false, includeTable: false })}
+                <div className="catalog-search-controls">
+                  <input className="form-input catalog-main-search" placeholder="Search table or column name, for example id" value={appScopes.search.query} onChange={(e) => patchWorkbenchScope('search', { query: e.target.value })} />
+                  <div className="plot-option-row catalog-type-row">
+                    <span>Data type:</span>
+                    {['', 'NUMBER', 'VARCHAR', 'DATE', 'TIMESTAMP', 'BOOLEAN'].map(type => (
+                      <button key={type || 'all'} className={`chip-btn ${appScopes.search.dataType === type ? 'active' : ''}`} onClick={() => patchWorkbenchScope('search', { dataType: type })}>{type || 'ALL TYPES'}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="catalog-results-layout">
+                <div className="glass-card catalog-result-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><Database size={16} /> Table Matches</span>
+                    <span className="status-badge">{searchTableResults.length} tables</span>
+                  </div>
+                  <div className="table-container catalog-result-table">
+                    <table className="custom-table catalog-table-match-table">
+                      <thead><tr><th>Database</th><th>Schema</th><th>Table</th><th>Instant Select</th></tr></thead>
+                      <tbody>
+                        {searchTableResults.map((row, idx) => {
+                          const sql = `SELECT * FROM ${row.TABLE_CATALOG}.${row.TABLE_SCHEMA}.${row.TABLE_NAME} LIMIT 100;`;
+                          return (
+                            <tr key={`${row.TABLE_CATALOG}-${row.TABLE_SCHEMA}-${row.TABLE_NAME}-${idx}`}>
+                              <td>{row.TABLE_CATALOG}</td>
+                              <td>{row.TABLE_SCHEMA}</td>
+                              <td style={{ fontWeight: 700 }}>{row.TABLE_NAME}</td>
+                              <td>{renderSqlActionButtons(sql, `${row.TABLE_NAME} Select`)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {searchTableResults.length === 0 && <div className="empty-state">No table names matched the search text.</div>}
+                  </div>
+                </div>
+
+                <div className="glass-card catalog-result-card">
+                  <div className="glass-card-header catalog-card-header-wrap">
+                    <span className="glass-card-title"><Layers size={16} /> Column Matches</span>
+                    <span className="status-badge">{searchColumnResults.length} columns</span>
+                  </div>
+                  <div className="catalog-column-filter-row">
+                    <input
+                      className="form-input"
+                      placeholder="Filter column results by table name, for example airline"
+                      value={appScopes.search.tableFilter}
+                      onChange={(e) => patchWorkbenchScope('search', { tableFilter: e.target.value })}
+                    />
+                    <button className="btn btn-secondary btn-small" onClick={runCatalogSearch} disabled={workbenchLoading.search}>
+                      Apply Table Filter
+                    </button>
+                  </div>
+                  <div className="table-container catalog-result-table">
+                    <table className="custom-table catalog-column-match-table">
+                      <thead><tr><th>Database</th><th>Schema</th><th>Table</th><th>Column</th><th>Type</th><th>Instant Select</th></tr></thead>
+                      <tbody>
+                        {searchColumnResults.map((row, idx) => {
+                          const sql = `SELECT ${row.COLUMN_NAME} FROM ${row.TABLE_CATALOG}.${row.TABLE_SCHEMA}.${row.TABLE_NAME} LIMIT 100;`;
+                          return (
+                            <tr key={`${row.TABLE_CATALOG}-${row.TABLE_SCHEMA}-${row.TABLE_NAME}-${row.COLUMN_NAME}-${idx}`}>
+                              <td>{row.TABLE_CATALOG}</td>
+                              <td>{row.TABLE_SCHEMA}</td>
+                              <td>{row.TABLE_NAME}</td>
+                              <td style={{ fontWeight: 700 }}>{row.COLUMN_NAME}</td>
+                              <td><span className="status-badge">{row.DATA_TYPE}</span></td>
+                              <td>{renderSqlActionButtons(sql, `${row.TABLE_NAME}.${row.COLUMN_NAME} Select`)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {searchColumnResults.length === 0 && <div className="empty-state">No columns matched the search text, data type, and table-name filter.</div>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'anomaly' && (
+            <div className="panel-body">
+              <div className="glass-card anomaly-scope-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><AlertTriangle size={16} /> Anomaly Detector</span>
+                  <button className="btn btn-primary btn-small" onClick={runAnomaly} disabled={workbenchLoading.anomaly}>
+                    {workbenchLoading.anomaly ? 'Scanning...' : 'Run Scan'}
+                  </button>
+                </div>
+                {renderWorkbenchScope('anomaly', { includeColumn: true })}
+              </div>
+
+              <div className="glass-card">
+                {renderWorkbenchTabs([{ id: 'scan', label: 'Detector Results' }, { id: 'rules', label: 'Custom Rule' }], anomalyTab, setAnomalyTab)}
+                {anomalyTab === 'scan' && (
+                  anomalyData ? (
+                    <>
+                      <div className="anomaly-summary-grid">
+                        <div className="mini-card">
+                          <div className="mini-card-title">Scan Type</div>
+                          <span className="status-badge">{anomalyData.kind}</span>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Anomalies Returned</div>
+                          <span className="stat-value" style={{ fontSize: '24px' }}>{anomalyData.rows?.length || 0}</span>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Detection Summary</div>
+                          <pre className="code-block compact-code">{JSON.stringify(anomalyData.summary, null, 2)}</pre>
+                        </div>
+                      </div>
+                      <div className="plot-option-row">
+                        <span>Plot</span>
+                        {getAnomalyPlotOptions(anomalyData.kind).map(option => (
+                          <button
+                            key={option}
+                            className={`chip-btn ${anomalyPlotType === option ? 'active' : ''}`}
+                            onClick={() => setAnomalyPlotType(option)}
+                          >
+                            {option === 'auto' ? 'Best Fit' : option}
+                          </button>
+                        ))}
+                      </div>
+                      {renderAnomalyPlot(anomalyData, anomalyPlotType)}
+                      <div className="table-container">
+                        {anomalyData.rows?.length > 0 ? (
+                          <table className="custom-table">
+                            <thead><tr>{Object.keys(anomalyData.rows[0]).map(k => <th key={k}>{k}</th>)}</tr></thead>
+                            <tbody>{anomalyData.rows.map((row, idx) => <tr key={idx}>{Object.keys(row).map(k => <td key={k}>{String(row[k] ?? '')}</td>)}</tr>)}</tbody>
+                          </table>
+                        ) : (
+                          <div className="empty-state">No anomalies returned for this scan.</div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="empty-state">Choose a table and column, then run the detector. Numeric columns use z-score, dates use rolling MAD, and text columns use frequency probability.</div>
+                  )
+                )}
+                {anomalyTab === 'rules' && (() => {
+                  const customRuleSql = buildCustomAnomalyRuleSql();
+                  return (
+                    <div className="anomaly-rule-workspace">
+                      <div className="mini-card anomaly-rule-builder">
+                        <div className="mini-card-title">Build Custom Rule</div>
+                        <div className="anomaly-rule-grid">
+                          <label className="form-group">
+                            <span>Rule Name</span>
+                            <input
+                              className="form-input"
+                              value={customAnomalyRule.name}
+                              onChange={(e) => setCustomAnomalyRule(prev => ({ ...prev, name: e.target.value }))}
+                              placeholder="Negative amount, invalid status, future date..."
+                            />
+                          </label>
+                          <label className="form-group">
+                            <span>Rule Type</span>
+                            <select
+                              className="form-input"
+                              value={customAnomalyRule.type}
+                              onChange={(e) => setCustomAnomalyRule(prev => ({ ...prev, type: e.target.value }))}
+                            >
+                              <option value="is_null">Is null</option>
+                              <option value="is_not_null">Is not null</option>
+                              <option value="equals">Equals</option>
+                              <option value="not_equals">Not equals</option>
+                              <option value="greater_than">Greater than</option>
+                              <option value="greater_or_equal">Greater than or equal</option>
+                              <option value="less_than">Less than</option>
+                              <option value="less_or_equal">Less than or equal</option>
+                              <option value="between">Between</option>
+                              <option value="contains">Contains</option>
+                              <option value="not_contains">Does not contain</option>
+                              <option value="starts_with">Starts with</option>
+                              <option value="ends_with">Ends with</option>
+                              <option value="regex">Regex match</option>
+                              <option value="custom_where">Custom WHERE</option>
+                            </select>
+                          </label>
+                          {customAnomalyRule.type !== 'custom_where' && (
+                            <div className="form-group">
+                              <span>Selected Column</span>
+                              <div className="readonly-pill">{appScopes.anomaly.column || 'Select a column above'}</div>
+                            </div>
+                          )}
+                          {getCustomRuleNeedsValue() && (
+                            <label className="form-group">
+                              <span>{customAnomalyRule.type === 'between' ? 'Start Value' : 'Value'}</span>
+                              <input
+                                className="form-input"
+                                value={customAnomalyRule.value}
+                                onChange={(e) => setCustomAnomalyRule(prev => ({ ...prev, value: e.target.value }))}
+                                placeholder="Enter comparison value"
+                              />
+                            </label>
+                          )}
+                          {getCustomRuleNeedsSecondValue() && (
+                            <label className="form-group">
+                              <span>End Value</span>
+                              <input
+                                className="form-input"
+                                value={customAnomalyRule.secondValue}
+                                onChange={(e) => setCustomAnomalyRule(prev => ({ ...prev, secondValue: e.target.value }))}
+                                placeholder="Enter upper bound"
+                              />
+                            </label>
+                          )}
+                          {customAnomalyRule.type === 'custom_where' && (
+                            <label className="form-group anomaly-custom-where">
+                              <span>Custom WHERE Condition</span>
+                              <textarea
+                                className="form-input"
+                                value={customAnomalyRule.customWhere}
+                                onChange={(e) => setCustomAnomalyRule(prev => ({ ...prev, customWhere: e.target.value }))}
+                                placeholder={'Example: "AMOUNT" < 0 OR "STATUS" = \'FAILED\''}
+                                rows="4"
+                              />
+                            </label>
+                          )}
+                        </div>
+                        <div className="anomaly-rule-preview">
+                          <div className="mini-card-title sql-card-title">
+                            <span>Generated Rule SQL</span>
+                            {customRuleSql && renderSqlActionButtons(customRuleSql, customAnomalyRule.name || 'Custom Anomaly Rule', { inline: true })}
+                          </div>
+                          {customRuleSql ? (
+                            <>
+                              <pre className="code-block">{customRuleSql}</pre>
+                              {renderSqlInlinePreview(customRuleSql, customAnomalyRule.name || 'Custom Anomaly Rule')}
+                            </>
+                          ) : (
+                            <div className="empty-state">Select a table/column and fill the rule inputs to generate executable SQL.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mini-card">
+                        <div className="mini-card-title">Suggested Rules From Detector</div>
+                        {anomalyData?.custom_rules?.length > 0 ? (
+                          <div className="anomaly-suggested-rules">
+                            {anomalyData.custom_rules.map((rule, idx) => (
+                              <div key={idx} className="mini-card">
+                                <div className="mini-card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                                  <span>{rule.label}</span>
+                                  {renderSqlActionButtons(rule.sql, rule.label, { inline: true })}
+                                </div>
+                                <pre className="code-block">{rule.sql}</pre>
+                                {renderSqlInlinePreview(rule.sql, rule.label)}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="empty-state">Run Scan to get detector-suggested rule templates for the selected column.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'freshness' && (
+            <div className="panel-body">
+              <div className="glass-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><RefreshCw size={16} /> Data Freshness</span>
+                  <button className="btn btn-primary btn-small" onClick={runFreshness} disabled={workbenchLoading.freshness}>
+                    {workbenchLoading.freshness ? 'Scanning...' : 'Run Freshness Scan'}
+                  </button>
+                </div>
+                {renderWorkbenchScope('freshness', { includeTable: true, tablePlaceholder: 'All Tables/Views' })}
+                <div className="freshness-control-grid">
+                  <div>
+                    <div className="scope-control-label">Status Filter</div>
+                    <div className="chip-row">
+                      {['', 'daily', 'weekly', 'monthly'].map(freq => (
+                        <button key={freq || 'all'} className={`chip-btn ${appScopes.freshness.frequency === freq ? 'active' : ''}`} onClick={() => patchWorkbenchScope('freshness', { frequency: freq })}>{freq || 'ALL'}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="scope-control-label">Expected SLA</div>
+                    <div className="chip-row">
+                      {['hourly', 'daily', 'weekly', 'monthly', 'custom'].map(freq => (
+                        <button key={freq} className={`chip-btn ${appScopes.freshness.expectedFrequency === freq ? 'active' : ''}`} onClick={() => patchWorkbenchScope('freshness', { expectedFrequency: freq })}>{freq.toUpperCase()}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {appScopes.freshness.expectedFrequency === 'custom' && (
+                    <label className="custom-hours-control">
+                      <span>Custom Hours</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={appScopes.freshness.customHours || 24}
+                        onChange={(e) => patchWorkbenchScope('freshness', { customHours: Number(e.target.value) })}
+                      />
+                    </label>
+                  )}
+                </div>
+                {appScopes.freshness.table && (() => {
+                  const freshnessDateColumns = getWorkbenchDateColumns('freshness');
+                  return (
+                    <div className="freshness-date-field-panel">
+                      {freshnessDateColumns.length > 0 ? (
+                        <SearchableSelect
+                          value={appScopes.freshness.column || freshnessDateColumns[0] || ''}
+                          onChange={(value) => patchWorkbenchScope('freshness', { column: value })}
+                          options={freshnessDateColumns}
+                          placeholder="Select Date Field"
+                          label="FRESHNESS DATE FIELD"
+                          className="workbench-table-select freshness-date-select"
+                        />
+                      ) : (
+                        <div className="empty-state">No date or timestamp field found for the selected table. Data freshness cannot be calculated for this table.</div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {freshnessData && (
+                <>
+                  <div className="freshness-summary-grid">
+                    {[
+                      ['Tables Scanned', freshnessData.summary?.tables_scanned ?? freshnessData.results?.length ?? 0, ''],
+                      ['Fresh', freshnessData.summary?.fresh ?? 0, 'fresh'],
+                      ['Warning', freshnessData.summary?.warning ?? 0, 'warning'],
+                      ['Stale', freshnessData.summary?.stale ?? 0, 'stale'],
+                      ['No Date Field', freshnessData.summary?.no_date_field ?? 0, 'unknown'],
+                      ['SLA Hours', freshnessData.summary?.expected_hours ?? '-', '']
+                    ].map(([label, value, tone]) => (
+                      <div key={label} className={`freshness-summary-card ${tone}`}>
+                        <span>{label}</span>
+                        <strong>{Number.isFinite(Number(value)) ? Number(value).toLocaleString() : value}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  {appScopes.freshness.table && (() => {
+                    const selectedFreshness = freshnessData.results?.[0];
+                    if (!selectedFreshness) return null;
+                    return (
+                      <div className="glass-card freshness-detail-card">
+                        <div className="glass-card-header">
+                          <span className="glass-card-title"><Activity size={16} /> Freshness Monitor Detail</span>
+                          <span className={`status-badge ${selectedFreshness.status !== 'fresh' ? 'mock' : ''}`}>{selectedFreshness.status}</span>
+                        </div>
+                        <div className="freshness-kpi-strip">
+                          <div><span>Last Seen</span><strong>{String(selectedFreshness.last_seen || '-')}</strong></div>
+                          <div><span>Age Hours</span><strong>{selectedFreshness.age_hours ?? '-'}</strong></div>
+                          <div><span>Latest Rows</span><strong>{(selectedFreshness.latest_rows ?? 0).toLocaleString()}</strong></div>
+                          <div><span>Previous Rows</span><strong>{(selectedFreshness.previous_rows ?? 0).toLocaleString()}</strong></div>
+                          <div><span>Volume Change</span><strong>{selectedFreshness.volume_change_pct ?? '-'}%</strong></div>
+                          <div><span>Load Pattern</span><strong>{selectedFreshness.load_pattern || '-'}</strong></div>
+                        </div>
+                        <div className="freshness-detail-grid">
+                          <div className="mini-card freshness-narrative">
+                            <div className="mini-card-title">AI Freshness Summary</div>
+                            <p>{selectedFreshness.ai_summary || selectedFreshness.message || 'No freshness summary available.'}</p>
+                          </div>
+                          <div className="mini-card freshness-narrative">
+                            <div className="mini-card-title">Alert Recommendation</div>
+                            <p>{selectedFreshness.alert_recommendation || 'No alert recommendation available.'}</p>
+                          </div>
+                        </div>
+                        <div className="mini-card">
+                          <div className="mini-card-title">Freshness Trend</div>
+                          {renderFreshnessTrendChart(selectedFreshness.trend || [])}
+                        </div>
+                        <div className="freshness-detail-grid">
+                          <div className="mini-card">
+                            <div className="mini-card-title">Missing Expected Dates</div>
+                            {selectedFreshness.missing_dates?.length ? (
+                              <div className="freshness-missing-list">
+                                {selectedFreshness.missing_dates.map(day => <span key={day}>{day}</span>)}
+                              </div>
+                            ) : (
+                              <div className="empty-state">No missing daily partitions detected in the returned history.</div>
+                            )}
+                          </div>
+                          <div className="mini-card">
+                            <div className="mini-card-title">Freshness SQL Checks</div>
+                            <div className="freshness-sql-list">
+                              {selectedFreshness.sql_checks?.map((check, idx) => (
+                                <div key={idx} className="freshness-sql-item">
+                                  <div className="code-header">
+                                    <span>{check.check}</span>
+                                    {renderSqlActionButtons(check.sql, check.check, { inline: true })}
+                                  </div>
+                                  <pre className="code-block">{check.sql}</pre>
+                                  {renderSqlInlinePreview(check.sql, check.check)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="glass-card">
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><Table size={16} /> Freshness Ranking</span>
+                    </div>
+                    <div className="table-container freshness-result-table">
+                      <table className="custom-table">
+                        <thead>
+                          <tr>
+                            <th>Table</th><th>Date Column</th><th>Last Seen</th><th>Age Hours</th><th>Latest Rows</th><th>Previous Rows</th><th>Change</th><th>Pattern</th><th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {freshnessData.results?.map((row, idx) => (
+                            <tr key={idx}>
+                              <td title={row.table_name}>{row.table_name}</td>
+                              <td>{row.date_column || '-'}</td>
+                              <td>{String(row.last_seen || '-')}</td>
+                              <td>{row.age_hours ?? '-'}</td>
+                              <td>{row.latest_rows?.toLocaleString?.() ?? '-'}</td>
+                              <td>{row.previous_rows?.toLocaleString?.() ?? '-'}</td>
+                              <td>{row.volume_change_pct ?? '-'}%</td>
+                              <td>{row.load_pattern || '-'}</td>
+                              <td><span className={`status-badge ${row.status !== 'fresh' ? 'mock' : ''}`}>{row.status}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+
+            </div>
+          )}
+
+          {activeTab === 'queryLog' && (
+            <div className="panel-body">
+              <div className="glass-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Terminal size={16} /> Persisted Query Log</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-secondary btn-small" onClick={loadWorkbenchQueryLog} disabled={workbenchLoading.queryLog}>
+                      {workbenchLoading.queryLog ? 'Refreshing...' : 'Refresh Log'}
+                    </button>
+                    <button className="btn btn-danger btn-small" onClick={clearWorkbenchQueryLog} disabled={workbenchLoading.queryLog}>
+                      Clear Log
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                  Stored locally in the backend workspace until you clear it.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {workbenchQueryLog.length > 0 ? workbenchQueryLog.map((item, idx) => (
+                    <div key={idx} className="mini-card">
+                      <div className="code-header" style={{ alignItems: 'center', gap: '12px' }}>
+                        <span>{item.timestamp} | {item.purpose} | {item.source}</span>
+                        {renderSqlActionButtons(item.query, item.purpose || 'Query Log Result', { inline: true })}
+                      </div>
+                      <pre className="code-block">{item.query}</pre>
+                      {renderSqlInlinePreview(item.query, item.purpose || 'Query Log Result')}
+                    </div>
+                  )) : <div className="empty-state">No queries logged yet. Execute SQL from chat or run a workbench scan to populate this list.</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab !== 'chat' && renderSqlResultsCard()}
+
           {/* TAB 3: Metadata & Dictionary */}
           {activeTab === 'metadata' && (
             <div className="panel-body">
-              <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', flex: 1, height: 'calc(100vh - 170px)', overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', alignItems: 'start' }}>
                 
                 {/* Table search explorer */}
-                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
+                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh' }}>
                   <div className="glass-card-header">
                     <span className="glass-card-title"><Database size={16} /> Information Schema</span>
                   </div>
@@ -1577,7 +5118,7 @@ function App() {
                 </div>
 
                 {/* Table details panel */}
-                <div className="glass-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
+                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {selectedTable ? (
                     <>
                       <div className="glass-card-header" style={{ marginBottom: 0 }}>
@@ -1729,62 +5270,113 @@ function App() {
             <div className="panel-body">
               {loadingCost ? (
                 <div style={{ textAlign: 'center', padding: '50px' }}>Loading Cost Analytics...</div>
+              ) : costData?.success === false ? (
+                <div className="empty-state">
+                  <strong>Cost Analyzer could not load.</strong>
+                  <div style={{ marginTop: 8 }}>{costData.error}</div>
+                  <button className="btn btn-secondary btn-small" style={{ marginTop: 14 }} onClick={() => fetchCostDashboard(costDateRange, costStartDate, costEndDate)}>
+                    <RefreshCw size={13} /> Retry
+                  </button>
+                </div>
               ) : costData ? (
-                <>
-                  <div className="stat-grid">
-                    <div className="glass-card stat-card">
-                      <span className="stat-label">Total Credit Consumption (7 Days)</span>
-                      <span className="stat-value purple">{costData.total_credits_used} Credits</span>
-                      <span className="stat-change text-secondary">Equivalent to ~${(costData.total_credits_used * 3.00).toFixed(2)} USD</span>
+                <div className="cost-dashboard">
+                  <div className={`cost-source-banner ${costData.data_source === 'snowflake' ? 'live' : 'mock'}`}>
+                    <div>
+                      <strong>{costData.data_source === 'snowflake' ? 'Live Snowflake ACCOUNT_USAGE' : 'Demo / Mock Cost Data'}</strong>
+                      <span>{costData.source_message}</span>
+                      {costData.query_cost_note && <span>{costData.query_cost_note}</span>}
                     </div>
+                    <span className="status-badge">
+                      {costData.source_queries?.warehouse_metering || 'Cost source'} | {costData.date_range?.start_date || costStartDate} to {costData.date_range?.end_date || costEndDate}
+                    </span>
+                  </div>
 
-                    <div className="glass-card stat-card">
-                      <span className="stat-label">Active Warehouse Clusters</span>
-                      <span className="stat-value">{costData.active_warehouses_count} WHs</span>
-                      <span className="stat-change">All configured with auto-suspend</span>
+                  <div className="cost-hero">
+                    <div>
+                      <div className="mini-card-title">Snowflake Spend Snapshot</div>
+                      <div className="cost-hero-value">{formatCredits(costData.summary?.total_credits_used)}</div>
+                      <div className="cost-hero-subtitle">
+                        Estimated {formatUsd(costData.summary?.estimated_cost_usd)} across {costData.summary?.active_warehouses_count || 0} warehouses and {costData.summary?.query_count || 0} captured queries.
+                      </div>
                     </div>
-
-                    <div className="glass-card stat-card">
-                      <span className="stat-label">Average Warehouse Efficiency</span>
-                      <span className="stat-value green">88.4%</span>
-                      <span className="stat-change">Optimal cluster execution time</span>
+                    <div className="cost-hero-actions">
+                      <select className="form-input" value={costDateRange} onChange={(e) => {
+                        const nextRange = Number(e.target.value);
+                        const nextDates = getRelativeCostRange(nextRange);
+                        setCostDateRange(nextRange);
+                        setCostStartDate(nextDates.start);
+                        setCostEndDate(nextDates.end);
+                        fetchCostDashboard(nextRange, nextDates.start, nextDates.end);
+                      }}>
+                        <option value={7}>Last 7 days</option>
+                        <option value={30}>Last 30 days</option>
+                        <option value={90}>Last 90 days</option>
+                        <option value={180}>Last 180 days</option>
+                        <option value={365}>Last 365 days</option>
+                      </select>
+                      <input className="form-input" type="date" value={costStartDate} onChange={(e) => setCostStartDate(e.target.value)} max={costEndDate || undefined} />
+                      <input className="form-input" type="date" value={costEndDate} onChange={(e) => setCostEndDate(e.target.value)} min={costStartDate || undefined} />
+                      <button className="btn btn-secondary btn-small" onClick={() => fetchCostDashboard(costDateRange, costStartDate, costEndDate)} disabled={loadingCost}>
+                        <RefreshCw size={13} /> Apply
+                      </button>
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                    {/* Compute Billing trend */}
-                    <div className="glass-card">
-                      <div className="glass-card-header">
-                        <span className="glass-card-title"><DollarSign size={16} /> Daily Credit Trend</span>
-                      </div>
-                      <div className="chart-container">
-                        {renderSvgLineChart(costData.daily_trend, 'date', 'credits')}
-                      </div>
+                  <div className="cost-kpi-grid">
+                    <div className="mini-card">
+                      <div className="mini-card-title">Avg Daily Burn</div>
+                      <span className="stat-value">{formatCredits(costData.summary?.avg_daily_credits)}</span>
+                      <span className="stat-change text-secondary">Across metering window</span>
                     </div>
-
-                    {/* Warehouse Breakdown */}
-                    <div className="glass-card">
-                      <div className="glass-card-header">
-                        <span className="glass-card-title"><Layers size={16} /> Warehouse Breakdown</span>
-                      </div>
-                      <div className="chart-container">
-                        {renderSvgBarChart(costData.warehouse_credits, 'warehouse', 'credits')}
-                      </div>
+                    <div className="mini-card">
+                      <div className="mini-card-title">Top Warehouse</div>
+                      <span className="stat-value green">{costData.summary?.top_warehouse?.warehouse || 'n/a'}</span>
+                      <span className="stat-change text-secondary">{costData.summary?.top_warehouse?.share_pct || 0}% of credits</span>
+                    </div>
+                    <div className="mini-card">
+                      <div className="mini-card-title">Compute / Cloud</div>
+                      <span className="stat-value purple">{formatCredits(costData.summary?.compute_credits)}</span>
+                      <span className="stat-change text-secondary">Cloud services {formatCredits(costData.summary?.cloud_credits)}</span>
+                    </div>
+                    <div className="mini-card">
+                      <div className="mini-card-title">Failed Queries</div>
+                      <span className={`stat-value ${costData.summary?.failed_queries ? 'purple' : 'green'}`}>{costData.summary?.failed_queries || 0}</span>
+                      <span className="stat-change text-secondary">Avg {formatCredits(costData.summary?.avg_credit_per_query)} per query</span>
                     </div>
                   </div>
 
-                  {/* Expensive queries and suggestions */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                    
-                    <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div className="glass-card-header">
-                        <span className="glass-card-title"><AlertTriangle size={16} color="var(--accent-orange)" /> Cost Optimization Recommendations</span>
+                  <div className="glass-card cost-chart-shell">
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><DollarSign size={16} /> Interactive Cost View</span>
+                      <div className="plot-option-row" style={{ margin: 0 }}>
+                        {[
+                          ['trend', 'Daily Trend'],
+                          ['warehouse', 'Warehouse Share'],
+                          ['user', 'User Spend'],
+                          ['scatter', 'Runtime vs Credits']
+                        ].map(([mode, label]) => (
+                          <button key={mode} className={`chip-btn ${costChartMode === mode ? 'active' : ''}`} onClick={() => setCostChartMode(mode)}>
+                            {label}
+                          </button>
+                        ))}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    </div>
+                    {costChartMode === 'trend' && renderCostTrendChart(costData.daily_trend)}
+                    {costChartMode === 'warehouse' && renderCostBarChart(costData.warehouse_credits || [], 'warehouse', 'credits')}
+                    {costChartMode === 'user' && renderCostBarChart(costData.user_credits || [], 'user', 'credits')}
+                    {costChartMode === 'scatter' && renderCostScatterChart(costData.query_scatter || [])}
+                  </div>
+
+                  <div className="cost-split-grid">
+                    <div className="glass-card">
+                      <div className="glass-card-header">
+                        <span className="glass-card-title"><AlertTriangle size={16} color="var(--accent-orange)" /> Optimization Signals</span>
+                      </div>
+                      <div className="cost-recommendation-list">
                         {costData.recommendations?.map((rec, idx) => (
-                          <div key={idx} className="glass-card" style={{ padding: '12px', borderLeft: '3px solid var(--accent-orange)', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <Info size={16} color="var(--accent-orange)" style={{ flexShrink: 0 }} />
-                            <div style={{ fontSize: '12px' }}>{rec}</div>
+                          <div key={idx} className="cost-recommendation">
+                            <Info size={16} color="var(--accent-orange)" />
+                            <span>{rec}</span>
                           </div>
                         ))}
                       </div>
@@ -1792,36 +5384,70 @@ function App() {
 
                     <div className="glass-card">
                       <div className="glass-card-header">
-                        <span className="glass-card-title"><Terminal size={16} /> Top Most Expensive Queries</span>
+                        <span className="glass-card-title"><Layers size={16} /> Warehouse Utilization</span>
                       </div>
-                      <div className="table-container">
-                        <table className="custom-table" style={{ fontSize: '11px' }}>
-                          <thead>
-                            <tr>
-                              <th>Query ID</th>
-                              <th>User</th>
-                              <th>Warehouse</th>
-                              <th>Elapsed</th>
-                              <th>Credits</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {costData.most_expensive_queries?.map((qRow, idx) => (
-                              <tr key={idx}>
+                      <div className="cost-warehouse-list">
+                        {costData.warehouse_credits?.map((row) => (
+                          <div key={row.warehouse} className="cost-warehouse-row">
+                            <div>
+                              <div className="cost-row-title">{row.warehouse}</div>
+                              <div className="cost-row-subtitle">{row.queries} queries | avg {row.avg_elapsed_seconds}s | {row.failures} failed</div>
+                            </div>
+                            <div className="cost-row-meter">
+                              <div className="cost-row-meter-fill" style={{ width: `${Math.min(100, row.share_pct || 0)}%` }}></div>
+                            </div>
+                            <div className="cost-row-value">{formatCredits(row.credits)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glass-card">
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><Terminal size={16} /> Most Expensive Queries</span>
+                      <div className="plot-option-row" style={{ margin: 0 }}>
+                        {['all', 'failed', 'long'].map(filter => (
+                          <button key={filter} className={`chip-btn ${costQueryFilter === filter ? 'active' : ''}`} onClick={() => setCostQueryFilter(filter)}>
+                            {filter === 'all' ? 'All' : filter === 'failed' ? 'Failed' : 'Long Running'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="table-container">
+                      <table className="custom-table cost-query-table">
+                        <thead>
+                          <tr>
+                            <th>Query ID</th>
+                            <th>User</th>
+                            <th>Warehouse</th>
+                            <th>Status</th>
+                            <th>Elapsed</th>
+                            <th>Cloud Credits</th>
+                            <th>Cloud Cost</th>
+                            <th>SQL Preview</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(costData.most_expensive_queries || [])
+                            .filter(row => costQueryFilter === 'all' || (costQueryFilter === 'failed' && row.EXECUTION_STATUS === 'FAILED') || (costQueryFilter === 'long' && Number(row.TOTAL_ELAPSED_TIME) >= 120))
+                            .map((qRow, idx) => (
+                              <tr key={`${qRow.QUERY_ID}-${idx}`}>
                                 <td style={{ fontFamily: 'var(--font-family-mono)' }}>{qRow.QUERY_ID}</td>
                                 <td>{qRow.USER_NAME}</td>
                                 <td>{qRow.WAREHOUSE_NAME}</td>
-                                <td>{qRow.TOTAL_ELAPSED_TIME.toFixed(1)}s</td>
-                                <td style={{ fontWeight: 600, color: 'var(--accent-red)' }}>{qRow.CREDITS_USED.toFixed(2)}</td>
+                                <td><span className={`status-badge ${qRow.EXECUTION_STATUS === 'FAILED' ? 'mock' : ''}`}>{qRow.EXECUTION_STATUS}</span></td>
+                                <td>{Number(qRow.TOTAL_ELAPSED_TIME || 0).toFixed(1)}s</td>
+                                <td style={{ fontWeight: 700, color: 'var(--accent-orange)' }}>{Number(qRow.CREDITS_USED || 0).toFixed(3)}</td>
+                                <td>{formatUsd(qRow.COST_USD)}</td>
+                                <td className="cost-sql-cell" title={qRow.QUERY_TEXT}>{qRow.QUERY_TEXT}</td>
                               </tr>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                        </tbody>
+                      </table>
                     </div>
-
                   </div>
-                </>
+                </div>
               ) : null}
             </div>
           )}
@@ -2087,12 +5713,12 @@ function App() {
             </div>
           )}
 
-          {/* TAB 8: Documentation Hub (RAG) */}
+          {/* Document Hub */}
           {activeTab === 'rag' && (
-            <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', alignItems: 'stretch' }}>
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', overflow: 'auto' }}>
+            <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', alignItems: 'start' }}>
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="glass-card-title"><HelpCircle size={16} /> Data Architecture Knowledge Base</span>
+                  <span className="glass-card-title"><HelpCircle size={16} /> Document Hub</span>
                   <button 
                     className="btn btn-secondary btn-small"
                     style={{ border: '1px solid rgba(255, 68, 68, 0.4)', color: '#ff4444' }}
@@ -2105,15 +5731,28 @@ function App() {
                 <form onSubmit={handleRagSearch} style={{ display: 'flex', gap: '12px' }}>
                   <input 
                     type="text" 
-                    placeholder="Ask standard engineering questions... (e.g. How is customer data loaded?)" 
+                    placeholder="Ask a question from learned articles, files, JSON, CSV, Excel, or pasted notes..." 
                     className="chat-input"
                     value={ragQuery}
                     onChange={(e) => setRagQuery(e.target.value)}
                   />
                   <button className="btn btn-primary" type="submit" disabled={loadingRag}>
-                    {loadingRag ? 'Searching Vector Space...' : 'Query Repository'}
+                    {loadingRag ? 'Searching knowledge...' : 'Ask Document Hub'}
                   </button>
                 </form>
+
+                <div className="workbench-grid">
+                  {[
+                    ['Source-grounded answers', 'Answers use indexed chunks and return source snippets for review.'],
+                    ['Multi-format learning', 'Learn URLs, pasted text, JSON, CSV, Excel, HTML, SQL, logs, and raw text files.'],
+                    ['Useful next steps', 'Add summaries, entity extraction, document comparison, and reusable Q&A history next.']
+                  ].map(([title, copy]) => (
+                    <div key={title} className="mini-card">
+                      <div className="mini-card-title">{title}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{copy}</div>
+                    </div>
+                  ))}
+                </div>
 
                 {ragResult && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', borderTop: '1px solid var(--border-light)', paddingTop: '20px' }}>
@@ -2159,6 +5798,178 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div className="glass-card">
                   <div className="glass-card-header">
+                    <span className="glass-card-title"><Layers size={16} /> Batch Ingest</span>
+                  </div>
+                  <form onSubmit={handleBatchIngest} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Web Page URLs</label>
+                      <textarea
+                        className="form-input"
+                        rows="5"
+                        placeholder="Paste one URL per line. You can also separate URLs with commas."
+                        value={batchUrls}
+                        onChange={(e) => setBatchUrls(e.target.value)}
+                        style={{ resize: 'vertical', minHeight: '100px' }}
+                      />
+                    </div>
+                    <div className="crawl-control-grid">
+                      <div className="form-group">
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Crawl Depth</label>
+                        <select className="form-input" value={crawlDepth} onChange={(e) => setCrawlDepth(Number(e.target.value))}>
+                          <option value={0}>0 - This page only</option>
+                          <option value={1}>1 - Direct child links</option>
+                          <option value={2}>2 - Child links of child links</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Max Pages Total</label>
+                        <select className="form-input" value={crawlMaxPages} onChange={(e) => setCrawlMaxPages(Number(e.target.value))}>
+                          <option value={5}>5</option>
+                          <option value={10}>10</option>
+                          <option value={15}>15</option>
+                          <option value={25}>25</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Shared File Format</label>
+                      <select className="form-input" value={documentFormat} onChange={(e) => setDocumentFormat(e.target.value)}>
+                        <option value="auto">Auto detect</option>
+                        <option value="text">Text / Markdown / SQL / Logs</option>
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV / TSV</option>
+                        <option value="excel">Excel</option>
+                        <option value="html">HTML</option>
+                        <option value="raw">Raw readable text</option>
+                      </select>
+                    </div>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".txt,.md,.json,.csv,.tsv,.xlsx,.xls,.html,.htm,.sql,.log,.xml,.yaml,.yml"
+                      ref={batchFileInputRef}
+                      onChange={(e) => setBatchFiles(Array.from(e.target.files || []))}
+                      style={{ display: 'none' }}
+                    />
+                    <button type="button" className="btn btn-secondary btn-small" onClick={() => batchFileInputRef.current?.click()} disabled={ingestingBatch} style={{ width: '100%' }}>
+                      {batchFiles.length ? `${batchFiles.length} Files Selected` : 'Select Files'}
+                    </button>
+                    {batchFiles.length > 0 && (
+                      <div className="batch-file-list">
+                        {batchFiles.slice(0, 5).map(file => <span key={file.name}>{file.name}</span>)}
+                        {batchFiles.length > 5 && <span>+{batchFiles.length - 5} more</span>}
+                      </div>
+                    )}
+                    <button type="submit" className="btn btn-primary btn-small" disabled={ingestingBatch || (!batchUrls.trim() && batchFiles.length === 0)} style={{ width: '100%' }}>
+                      {ingestingBatch ? 'Batch Learning...' : 'Ingest URLs + Files'}
+                    </button>
+                    {batchIngestStatus && (
+                      <div style={{ fontSize: '11px', color: batchIngestStatus.startsWith('Success') ? 'var(--accent-green)' : 'var(--accent-orange)', marginTop: '4px' }}>
+                        {batchIngestStatus}
+                      </div>
+                    )}
+                    {batchIngestResult?.results?.length > 0 && (
+                      <div className="batch-result-list">
+                        {batchIngestResult.results.map((item, idx) => (
+                          <div key={`${item.source}-${idx}`} className="batch-result-row">
+                            <span className={`status-badge ${item.success ? '' : 'mock'}`}>{item.success ? 'OK' : 'FAIL'}</span>
+                            <span title={item.source}>{item.source}</span>
+                            <strong>{item.success ? `${item.chunks} chunks` : item.error}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+                <div className="glass-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><Sparkles size={16} /> Learn a Source</span>
+                  </div>
+                  <form onSubmit={handleIngestDocumentSource} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                    <div className="plot-option-row" style={{ marginBottom: 0 }}>
+                      <span>Source</span>
+                      {['web', 'text'].map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`chip-btn ${documentSourceMode === mode ? 'active' : ''}`}
+                          onClick={() => setDocumentSourceMode(mode)}
+                        >
+                          {mode === 'web' ? 'Web Page' : 'Paste Text'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Title</label>
+                      <input
+                        type="text"
+                        placeholder="Optional source title"
+                        className="form-input"
+                        value={documentTitle}
+                        onChange={(e) => setDocumentTitle(e.target.value)}
+                      />
+                    </div>
+                    {documentSourceMode === 'web' ? (
+                      <>
+                        <div className="form-group">
+                          <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Web Page URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://example.com/article"
+                            className="form-input"
+                            value={documentUrl}
+                            onChange={(e) => setDocumentUrl(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="crawl-control-grid">
+                          <div className="form-group">
+                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Crawl Depth</label>
+                            <select className="form-input" value={crawlDepth} onChange={(e) => setCrawlDepth(Number(e.target.value))}>
+                              <option value={0}>0 - This page only</option>
+                              <option value={1}>1 - Direct child links</option>
+                              <option value={2}>2 - Child links of child links</option>
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Max Pages</label>
+                            <select className="form-input" value={crawlMaxPages} onChange={(e) => setCrawlMaxPages(Number(e.target.value))}>
+                              <option value={5}>5</option>
+                              <option value={10}>10</option>
+                              <option value={15}>15</option>
+                              <option value={25}>25</option>
+                            </select>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="form-group">
+                        <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Text / JSON / Notes</label>
+                        <textarea
+                          className="form-input"
+                          rows="7"
+                          placeholder="Paste article text, JSON, SQL notes, runbooks, or any readable content"
+                          value={documentText}
+                          onChange={(e) => setDocumentText(e.target.value)}
+                          required
+                          style={{ resize: 'vertical', minHeight: '130px' }}
+                        />
+                      </div>
+                    )}
+                    <button type="submit" className="btn btn-primary btn-small" disabled={ingestingDocument} style={{ width: '100%' }}>
+                      {ingestingDocument ? 'Learning...' : 'Learn Source'}
+                    </button>
+                    {documentIngestStatus && (
+                      <div style={{ fontSize: '11px', color: documentIngestStatus.startsWith('Success') ? 'var(--accent-green)' : 'var(--accent-orange)', marginTop: '4px' }}>
+                        {documentIngestStatus}
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+                <div className="glass-card">
+                  <div className="glass-card-header">
                     <span className="glass-card-title"><GitBranch size={16} /> Ingest Web Feed (RSS)</span>
                   </div>
                   <form onSubmit={handleIngestFeed} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
@@ -2199,10 +6010,22 @@ function App() {
                     <span className="glass-card-title"><Terminal size={16} /> Upload Local File</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Upload TXT, MD, JSON, or CSV document and parse it into searchable knowledge chunks.</p>
+                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Choose a format, upload a local document, and parse it into searchable knowledge chunks.</p>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>File Format</label>
+                      <select className="form-input" value={documentFormat} onChange={(e) => setDocumentFormat(e.target.value)}>
+                        <option value="auto">Auto detect</option>
+                        <option value="text">Text / Markdown / SQL / Logs</option>
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV / TSV</option>
+                        <option value="excel">Excel</option>
+                        <option value="html">HTML</option>
+                        <option value="raw">Raw readable text</option>
+                      </select>
+                    </div>
                     <input 
                       type="file" 
-                      accept=".txt,.md,.json,.csv"
+                      accept=".txt,.md,.json,.csv,.tsv,.xlsx,.xls,.html,.htm,.sql,.log,.xml,.yaml,.yml"
                       ref={fileInputRef}
                       onChange={handleFileUpload}
                       style={{ display: 'none' }}
@@ -2247,7 +6070,7 @@ function App() {
           {/* TAB 9: Incident Investigator */}
           {activeTab === 'incidents' && (
             <div className="panel-body">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
                 
                 {/* Incident logs list */}
                 <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

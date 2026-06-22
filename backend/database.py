@@ -281,7 +281,7 @@ class DatabaseManager:
 
 
     def execute_query(self, query: str):
-        """Executes a query on active platform or falls back to mock database."""
+        """Executes a query on the active platform. Mock execution is only used in mock mode or for local app tables."""
         lower_q = query.lower()
         
         # Route queries targeting local mock-only tables directly to mock execution
@@ -294,31 +294,24 @@ class DatabaseManager:
             
         if self.active_platform == "SNOWFLAKE":
             if self.conn_snowflake is None:
-                return self.execute_mock_query(query)
-            res = self.execute_snowflake_query(query)
-            # If Snowflake queries for query history or warehouse metering fail (e.g. permission issues),
-            # fall back gracefully to the mock SQLite database instead of crashing
-            if not res.get("success") and ("query_history" in lower_q or "warehouse_metering_history" in lower_q):
-                return self.execute_mock_query(query)
-            return res
+                return {"success": False, "error": "No active Snowflake connection. Reconnect or switch to mock mode explicitly."}
+            return self.execute_snowflake_query(query)
             
         elif self.active_platform == "REDSHIFT":
-            # Redshift does not have Snowflake warehouse metering views; fall back to mock for cost history
             if "query_history" in lower_q or "warehouse_metering_history" in lower_q:
-                return self.execute_mock_query(query)
+                return {"success": False, "error": "Snowflake ACCOUNT_USAGE cost views are not available on Redshift."}
             if self.conn_redshift is None:
-                return self.execute_mock_query(query)
+                return {"success": False, "error": "No active Redshift connection. Reconnect or switch to mock mode explicitly."}
             return self.execute_redshift_query(query)
             
         elif self.active_platform == "POSTGRESQL":
-            # PostgreSQL does not have Snowflake warehouse metering views; fall back to mock for cost history
             if "query_history" in lower_q or "warehouse_metering_history" in lower_q:
-                return self.execute_mock_query(query)
+                return {"success": False, "error": "Snowflake ACCOUNT_USAGE cost views are not available on PostgreSQL."}
             if self.conn_postgresql is None:
-                return self.execute_mock_query(query)
+                return {"success": False, "error": "No active PostgreSQL connection. Reconnect or switch to mock mode explicitly."}
             return self.execute_postgresql_query(query)
             
-        return self.execute_mock_query(query)
+        return {"success": False, "error": f"Unsupported active platform: {self.active_platform}"}
 
     def execute_snowflake_query(self, query: str):
         try:

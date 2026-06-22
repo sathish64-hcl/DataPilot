@@ -325,11 +325,18 @@ class AI_Engine:
 
     def answer_rag(self, query: str, document_chunks: list) -> dict:
         """Answers documentation search queries using RAG context."""
+        if not document_chunks:
+            return {
+                "answer": "I could not find relevant indexed content for that question.",
+                "citations": []
+            }
+
         context = "\n---\n".join([f"Document: {doc['TITLE']} ({doc['SOURCE_TYPE']})\nContent: {doc['CONTENT']}" for doc in document_chunks])
         
         if self.gemini_enabled:
             prompt = f"""
-            You are a Snowflake documentation assistant. Answer the user question based ONLY on the context provided.
+            You are a document question-answering assistant. Answer the user question based ONLY on the context provided.
+            If the context does not contain the answer, say that the learned documents do not include enough information.
             
             Context:
             {context}
@@ -355,31 +362,52 @@ class AI_Engine:
             except Exception as e:
                 print(f"Gemini API RAG error: {e}")
 
-        # Local Fallback answering
+        # Local fallback answering. Keep this strictly source-grounded.
         q = query.lower()
-        ans = "Documentation match not found. Please review the listed architecture standards in the metadata dashboard."
-        citations = []
+        citations = list(dict.fromkeys([doc["TITLE"] for doc in document_chunks[:4]]))
 
-        for doc in document_chunks:
-            if "confluence" in doc['SOURCE_TYPE'].lower() and ("load" in q or "customer" in q or "ingest" in q):
-                ans = "Customer data is loaded nightly at 02:00 AM UTC via AWS S3. It streams into STAGING.RAW_LOGINS and merges into PUBLIC.CUSTOMER using the WH_LOAD_LARGE warehouse which automatically suspends after 60 seconds of inactivity."
-                citations.append(doc['TITLE'])
-                break
-            elif "warehouse" in q or "paus" in q or "suspend" in q:
-                if "pausing" in doc['TITLE'].lower() or "suspend" in doc['CONTENT'].lower():
-                    ans = "To manage costs, Snowflake warehouses require an auto-suspend policy: WH_BI_MEDIUM suspends after 5 minutes, WH_LOAD_LARGE after 60 seconds, and WH_ELT_XL after 3 minutes. Warehouses auto-resume upon new queries."
-                    citations.append(doc['TITLE'])
-                    break
-            elif "governance" in q or "email" in q or "owner" in q or "pii" in q:
-                if "governance" in doc['TITLE'].lower() or "owner" in doc['CONTENT'].lower():
-                    ans = "PII details (email, phone, name) reside in the PUBLIC schema. SELECT grants are restricted to ROLE_BI_ANALYST and ROLE_MARKETING, monitored via ACCOUNT_USAGE.GRANTS_TO_ROLES. The owner is Sathish."
-                    citations.append(doc['TITLE'])
-                    break
+        if any(token in q for token in ("movie", "film", "rated", "rating", "rate", "highest", "best", "top")):
+            candidates = []
+            for doc in document_chunks:
+                content = re.sub(r"\s+", " ", doc["CONTENT"])
+                for match in re.finditer(r"(?:(\d{1,3})%\s+)?(?:(\d{1,3})%\s+)?([^%]{2,90}?)\s+Watchlist", content):
+                    scores = [int(value) for value in match.groups()[:2] if value and int(value) <= 100]
+                    title = re.sub(r"\s+", " ", match.group(3)).strip(" -:|")
+                    title = re.sub(r"^(View all|Link to|Certified fresh pick|New|More|Watch At Home)\s+", "", title, flags=re.I)
+                    if not scores or len(title) < 2:
+                        continue
+                    if any(skip in title.lower() for skip in ("newsletter", "account", "privacy", "cookie", "submit search")):
+                        continue
+                    candidates.append({
+                        "title": title[:80],
+                        "score": max(scores),
+                        "scores": scores,
+                        "source": doc["TITLE"]
+                    })
 
-        if not citations and document_chunks:
-            # General fallback citation
-            ans = f"Operational data is processed in batch jobs. Here is the closest documentation reference: {document_chunks[0]['CONTENT'][:200]}..."
-            citations.append(document_chunks[0]['TITLE'])
+            deduped = {}
+            for item in candidates:
+                key = item["title"].lower()
+                if key not in deduped or item["score"] > deduped[key]["score"]:
+                    deduped[key] = item
+
+            ranked = sorted(deduped.values(), key=lambda item: item["score"], reverse=True)[:8]
+            if ranked:
+                lines = [
+                    f"{idx + 1}. {item['title']} - highest visible rating {item['score']}%"
+                    for idx, item in enumerate(ranked)
+                ]
+                return {
+                    "answer": "From the retrieved Rotten Tomatoes content, the highest-rated visible entries are:\n" + "\n".join(lines),
+                    "citations": list(dict.fromkeys([item["source"] for item in ranked[:4]]))
+                }
+
+        snippet_lines = []
+        for doc in document_chunks[:3]:
+            content = re.sub(r"\s+", " ", doc["CONTENT"]).strip()
+            snippet_lines.append(f"- {doc['TITLE']}: {content[:280]}{'...' if len(content) > 280 else ''}")
+
+        ans = "I found related indexed content, but I could not derive a precise final answer locally. Relevant snippets:\n" + "\n".join(snippet_lines)
 
         return {
             "answer": ans,

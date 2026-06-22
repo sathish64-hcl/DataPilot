@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
 
 class SQLRequest(BaseModel):
     sql: str
+    limit: Optional[int] = 100
 
 class SchemaRequest(BaseModel):
     table_name: str
@@ -55,6 +56,15 @@ class SchemaRequest(BaseModel):
 class IngestFeedRequest(BaseModel):
     url: str
     source_name: Optional[str] = "Website"
+
+class IngestSourceRequest(BaseModel):
+    source_type: str
+    title: Optional[str] = None
+    content: Optional[str] = None
+    url: Optional[str] = None
+    format: Optional[str] = "auto"
+    crawl_depth: Optional[int] = 0
+    max_pages: Optional[int] = 10
 
 class UseSessionRequest(BaseModel):
     role: Optional[str] = None
