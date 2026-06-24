@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
@@ -9,6 +11,15 @@ datas = [
 ]
 
 datas += collect_data_files("snowflake.connector")
+
+binaries = []
+for dll_dir in (
+    Path.home() / "anaconda3" / "Library" / "bin",
+    Path.home() / "miniconda3" / "Library" / "bin",
+):
+    if dll_dir.exists():
+        for dll in dll_dir.glob("ffi*.dll"):
+            binaries.append((str(dll), "."))
 
 hiddenimports = []
 for package in (
@@ -27,7 +38,7 @@ for package in (
 a = Analysis(
     ["backend/portable_runner.py"],
     pathex=["backend"],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
