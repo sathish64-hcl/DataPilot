@@ -1,12 +1,12 @@
 import json
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from common import db
+from runtime_paths import data_path
 
 router = APIRouter()
 
-QUERY_LOG_PATH = Path(__file__).resolve().parent / "query_log.jsonl"
+QUERY_LOG_PATH = data_path("query_log.jsonl")
 
 
 def _safe_name(value: str) -> str:

@@ -49,6 +49,14 @@ class SQLRequest(BaseModel):
     sql: str
     limit: Optional[int] = 100
 
+class AIConfigRequest(BaseModel):
+    enabled: bool = False
+    processing_mode: Optional[str] = "native"
+    provider: Optional[str] = "openai"
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+
 class SchemaRequest(BaseModel):
     table_name: str
     columns: List[str]

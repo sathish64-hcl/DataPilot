@@ -2,3 +2,5 @@ backend/query_log.jsonl
 backend/__pycache__/
 frontend/dist/
 frontend/node_modules/
+.venv-build/
+build/

@@ -3,10 +3,11 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 import snowflake.connector
+from runtime_paths import data_path
 
 class DatabaseManager:
-    def __init__(self, db_path="data_pilot_mock.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or str(data_path("data_pilot_mock.db"))
         self.conn_snowflake = None
         self.conn_redshift = None
         self.conn_postgresql = None

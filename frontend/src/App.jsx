@@ -4,7 +4,7 @@ import {
   MessageSquare, Terminal, Database, ShieldAlert, DollarSign, 
   GitBranch, ShieldCheck, HelpCircle, AlertTriangle, Play, 
   RefreshCw, Layers, Copy, Check, Info, Server, Wifi, 
-  AlertCircle, Sparkles, Send, Settings, User, Key, Activity, Table
+  AlertCircle, Sparkles, Send, Settings, User, Key, Activity, Table, Trash2
 } from 'lucide-react';
 import './App.css';
 
@@ -408,6 +408,7 @@ function App() {
   const [askDatasetSql, setAskDatasetSql] = useState('');
   const [askDatasetExplanation, setAskDatasetExplanation] = useState('');
   const [askDatasetResult, setAskDatasetResult] = useState(null);
+  const [askDatasetCompareResult, setAskDatasetCompareResult] = useState(null);
   const [askDatasetTitle, setAskDatasetTitle] = useState('Dataset Answer');
   const [askDatasetChartType, setAskDatasetChartType] = useState('auto');
   const [askDatasetLoading, setAskDatasetLoading] = useState(false);
@@ -495,6 +496,122 @@ function App() {
   const [warehouses, setWarehouses] = useState([]);
   const [activeRole, setActiveRole] = useState('');
   const [activeWarehouse, setActiveWarehouse] = useState('');
+  const [aiConfig, setAiConfig] = useState({
+    enabled: false,
+    processing_mode: 'native',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    base_url: '',
+    has_api_key: false,
+    providers: [],
+    usage: {},
+    connection_status: { status: 'not_configured', message: 'AI is disabled.' },
+    templates: {}
+  });
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiConfigOpen, setAiConfigOpen] = useState(true);
+  const [snowflakeContextOpen, setSnowflakeContextOpen] = useState(false);
+  const [ragSourcesOpen, setRagSourcesOpen] = useState(false);
+  const aiNeedsConfig = ['ai', 'compare'].includes(aiConfig.processing_mode);
+  const isAiConnected = aiNeedsConfig && aiConfig.enabled && aiConfig.connection_status?.status === 'connected';
+  const isAiConfigured = aiNeedsConfig && aiConfig.enabled && !isAiConnected;
+  const appExecutionCatalog = [
+    {
+      id: 'chat',
+      name: 'AI Analyst Studio',
+      mode: 'Hybrid',
+      llmOps: ['nl_to_sql', 'nl_to_sql_compare', 'sql_repair'],
+      nativeWork: 'Schema lookup, SQL execution, charts, previews, row limits, comparison scoring.',
+      llmWork: 'Natural language to SQL, Compare AI pipeline, SQL auto-repair, answer explanation.',
+      note: 'Uses LLM only in AI or Compare execution mode.'
+    },
+    {
+      id: 'sql',
+      name: 'SQL Explainer / Tuning',
+      mode: 'Hybrid',
+      llmOps: ['sql_optimization'],
+      nativeWork: 'Cost-aware advisor, metadata-based scan estimate, SQL execution preview.',
+      llmWork: 'AI performance optimization report, SQL explanation, rewrite suggestions.',
+      note: 'Native cost advisor still works without an LLM.'
+    },
+    {
+      id: 'tableDetails',
+      name: 'Table Intelligence Studio',
+      mode: 'Hybrid',
+      llmOps: ['metadata_discovery', 'data_quality'],
+      nativeWork: 'Column metadata, samples, DDL, profiler stats, volume analyzer, DQ SQL, insight SQL.',
+      llmWork: 'AI descriptions, health narrative, metadata interpretation when AI mode is enabled.',
+      note: 'Most profiling and plots are Python/Snowflake SQL.'
+    },
+    {
+      id: 'rag',
+      name: 'Document Hub',
+      mode: 'Hybrid',
+      llmOps: ['rag_answer'],
+      nativeWork: 'Ingest web/files/RSS, crawl depth, chunking, retrieval, source snippets.',
+      llmWork: 'Source-grounded answer synthesis and summarization when AI mode is enabled.',
+      note: 'Falls back to native extractive answers when AI is unavailable.'
+    },
+    {
+      id: 'catalogSearch',
+      name: 'Column / Table Search',
+      mode: 'Native',
+      llmOps: [],
+      nativeWork: 'Information schema search, filters, datatype chips, generated SELECT snippets.',
+      llmWork: 'None.',
+      note: 'No token usage.'
+    },
+    {
+      id: 'anomaly',
+      name: 'Anomaly Detector',
+      mode: 'Native',
+      llmOps: [],
+      nativeWork: 'Z-score, MAD, frequency rarity, custom rule SQL, plots and previews.',
+      llmWork: 'None.',
+      note: 'No token usage.'
+    },
+    {
+      id: 'freshness',
+      name: 'Data Freshness',
+      mode: 'Native',
+      llmOps: [],
+      nativeWork: 'Date-field scan, freshness age, SLA buckets, latest/previous rows, trend checks.',
+      llmWork: 'None.',
+      note: 'No token usage.'
+    },
+    {
+      id: 'cost',
+      name: 'Cost Analyzer',
+      mode: 'Native',
+      llmOps: [],
+      nativeWork: 'Snowflake account usage/cost queries, plots, warehouse/query breakdowns.',
+      llmWork: 'None.',
+      note: 'No token usage.'
+    },
+    {
+      id: 'queryLog',
+      name: 'Query Log',
+      mode: 'Native',
+      llmOps: [],
+      nativeWork: 'Persisted local query history, replay, clear log.',
+      llmWork: 'None.',
+      note: 'No token usage.'
+    }
+  ];
+
+  const getAppUsage = (app) => {
+    const opUsage = aiConfig.usage?.operation_usage || {};
+    return (app.llmOps || []).reduce((acc, op) => {
+      const row = opUsage[op] || {};
+      acc.prompt_count += Number(row.prompt_count || 0);
+      acc.total_tokens += Number(row.total_tokens || 0);
+      acc.estimated_cost += Number(row.estimated_cost || 0);
+      return acc;
+    }, { prompt_count: 0, total_tokens: 0, estimated_cost: 0 });
+  };
+  const currentExecutionApp = appExecutionCatalog.find(app => app.id === activeTab);
 
   const defaultWorkbenchScope = { database: '', schema: '', type: 'TABLE', table: '', column: '' };
   const [appScopes, setAppScopes] = useState({
@@ -588,6 +705,7 @@ function App() {
   useEffect(() => {
     // Initial data load
     loadDatabases();
+    loadAiConfig();
     fetchCostDashboard();
     fetchLineage();
     fetchDqDashboard();
@@ -600,6 +718,102 @@ function App() {
     navigator.clipboard.writeText(text);
     setCopiedQuery(text);
     setTimeout(() => setCopiedQuery(''), 2000);
+  };
+
+  const loadAiConfig = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/config`);
+      const data = await res.json();
+      setAiConfig(data);
+    } catch (err) {
+      console.error('Error loading AI config:', err);
+    }
+  };
+
+  const saveAiConfig = async (patch = {}) => {
+    const next = {
+      enabled: aiConfig.enabled,
+      processing_mode: aiConfig.processing_mode,
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      base_url: aiConfig.base_url,
+      ...patch
+    };
+    if (aiApiKey.trim()) next.api_key = aiApiKey.trim();
+    setAiSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next)
+      });
+      const data = await res.json();
+      setAiConfig(data);
+      if (next.api_key) setAiApiKey('');
+    } catch (err) {
+      console.error('Error saving AI config:', err);
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  const testAiConnection = async () => {
+    setAiTesting(true);
+    try {
+      if (aiApiKey.trim()) {
+        await saveAiConfig({ api_key: aiApiKey.trim() });
+      }
+      const res = await fetch(`${API_BASE}/api/ai/test`, { method: 'POST' });
+      setAiConfig(await res.json());
+    } catch (err) {
+      console.error('Error testing AI connection:', err);
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
+  const clearAiConversation = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/conversation/clear`, { method: 'POST' });
+      const data = await res.json();
+      setAiConfig(prev => ({ ...prev, usage: data.usage || prev.usage }));
+    } catch (err) {
+      console.error('Error clearing AI conversation:', err);
+    }
+  };
+
+  const resetChatMessages = () => {
+    setChatMessages([
+      {
+        sender: 'ai',
+        text: 'Chat cleared. Select a table and ask a fresh question when you are ready.',
+        samples: []
+      }
+    ]);
+    setCurrentMessage('');
+    setChatResults(null);
+    clearAiConversation();
+  };
+
+  const refreshAiUsage = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/usage`);
+      const usage = await res.json();
+      setAiConfig(prev => ({ ...prev, usage }));
+    } catch (err) {
+      console.error('Error refreshing AI usage:', err);
+    }
+  };
+
+  const resetAiUsage = async () => {
+    if (!window.confirm('Reset accumulated LLM token usage? This clears the local usage dashboard history.')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/usage/reset`, { method: 'POST' });
+      const data = await res.json();
+      setAiConfig(prev => ({ ...prev, usage: data.usage || prev.usage }));
+    } catch (err) {
+      console.error('Error resetting AI usage:', err);
+    }
   };
 
   // Connection testing
@@ -658,10 +872,11 @@ function App() {
 
     // Add user message
     setChatMessages(prev => [...prev, { sender: 'user', text }]);
-    setChatMessages(prev => [...prev, { sender: 'ai', text: 'Processing your request with Data Pilot AI...', loading: true }]);
+    setChatMessages(prev => [...prev, { sender: 'ai', text: aiConfig.processing_mode === 'compare' ? 'Running Native and AI pipelines side by side...' : 'Processing your request with Data Pilot AI...', loading: true }]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const endpoint = aiConfig.processing_mode === 'compare' ? '/api/chat/compare' : '/api/chat';
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -676,14 +891,22 @@ function App() {
       setChatMessages(prev => {
         const updated = [...prev];
         // Replace loading message
-        updated[updated.length - 1] = {
-          sender: 'ai',
-          text: data.reply,
-          sql: data.sql,
-          visualization: data.visualization
-        };
+        updated[updated.length - 1] = data.mode === 'compare'
+          ? {
+              sender: 'ai',
+              text: 'Native vs AI comparison complete.',
+              compareResult: data
+            }
+          : {
+              sender: 'ai',
+              text: data.reply,
+              sql: data.sql,
+              visualization: data.visualization,
+              aiMetadata: data.ai_metadata
+            };
         return updated;
       });
+      refreshAiUsage();
     } catch {
       setChatMessages(prev => {
         const updated = [...prev];
@@ -767,7 +990,25 @@ function App() {
     setAskDatasetSql('');
     setAskDatasetExplanation('');
     setAskDatasetResult(null);
+    setAskDatasetCompareResult(null);
     try {
+      if (aiConfig.processing_mode === 'compare') {
+        const res = await fetch(`${API_BASE}/api/chat/compare`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: askDatasetQuestion,
+            database: activeDb,
+            schema_name: activeSchema,
+            table_name: activeTable || null
+          })
+        });
+        const comparison = await res.json();
+        setAskDatasetCompareResult(comparison);
+        setAskDatasetTitle(askDatasetQuestion.slice(0, 80) || 'Dataset Comparison');
+        refreshAiUsage();
+        return;
+      }
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -787,6 +1028,7 @@ function App() {
       setAskDatasetExplanation(generated.reply || 'The generated SQL answers the selected dataset question using the current database context.');
       setAskDatasetTitle(askDatasetQuestion.slice(0, 80) || 'Dataset Answer');
       setAskDatasetResult(await executeSqlWithLimit(generated.sql));
+      refreshAiUsage();
     } catch (err) {
       setAskDatasetResult({ success: false, error: err.message || 'Failed to ask this dataset.' });
     } finally {
@@ -833,6 +1075,7 @@ function App() {
       const executed = await executeSqlWithLimit(generated.sql);
       setReportData(executed);
       setReportTitle(reportPrompt.slice(0, 72) || 'Generated Report');
+      refreshAiUsage();
     } catch (err) {
       setReportData({ success: false, error: err.message || 'Failed to generate report.' });
     } finally {
@@ -937,6 +1180,7 @@ function App() {
       const [costData, optimizeData] = await Promise.all([costRes.json(), optimizeRes.json()]);
       setSqlCostAdvisor(costRes.ok ? costData : { success: false, error: costData.detail || costData.error || 'Cost advisor failed.' });
       setSqlOptimization(optimizeRes.ok ? optimizeData : { explanation: optimizeData.detail || optimizeData.error || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
+      refreshAiUsage();
     } catch (err) {
       setSqlCostAdvisor({ success: false, error: err.message || 'Cost advisor failed.' });
       setSqlOptimization({ explanation: err.message || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
@@ -976,6 +1220,7 @@ function App() {
         body: JSON.stringify({ table_name: table.TABLE_NAME, columns: cols })
       });
       const dict = await res.json();
+      refreshAiUsage();
       
       // Update local tables array
       setMetadataTables(prev => prev.map(t => {
@@ -1091,6 +1336,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/rag/search?query=${encodeURIComponent(ragQuery)}`);
       const data = await res.json();
       setRagResult(data);
+      refreshAiUsage();
     } catch (err) {
       console.error(err);
     }
@@ -1917,6 +2163,377 @@ function App() {
   };
 
   const renderSqlInlinePreview = (sql, title) => renderInlineSqlResult(getInlineSqlKey(sql, title));
+
+  const resolveChartFields = (result, visualization = {}) => {
+    const rows = result?.data || [];
+    const columns = result?.columns || Object.keys(rows[0] || {});
+    const resolveColumn = (name) => {
+      if (!name) return '';
+      return columns.find(col => String(col).toLowerCase() === String(name).toLowerCase()) || '';
+    };
+    let x = resolveColumn(visualization.x);
+    let y = resolveColumn(visualization.y);
+    const numericColumns = columns.filter(col => rows.some(row => Number.isFinite(Number(getKeyValue(row, col)))));
+    const labelColumns = columns.filter(col => !numericColumns.includes(col));
+    if (!y) y = numericColumns[0] || '';
+    if (!x) x = labelColumns[0] || columns.find(col => col !== y) || columns[0] || '';
+    const type = visualization.type && visualization.type !== 'none'
+      ? visualization.type
+      : (String(x).toLowerCase().includes('date') || String(x).toLowerCase().includes('time') ? 'line' : 'bar');
+    return { type, x, y, canChart: Boolean(rows.length && x && y) };
+  };
+
+  const renderChatVisualization = (message) => {
+    if (!message?.result?.success) {
+      return (
+        <div className="text-secondary" style={{ fontSize: '11px' }}>
+          Click "Execute" on SQL above to render this visualization dynamically.
+        </div>
+      );
+    }
+    const resolved = resolveChartFields(message.result, message.visualization);
+    if (!resolved.canChart) {
+      return <div className="text-secondary" style={{ fontSize: '11px' }}>No numeric result column was available for charting.</div>;
+    }
+    if (resolved.type === 'line') return renderSvgLineChart(message.result.data, resolved.x, resolved.y);
+    return renderSvgBarChart(message.result.data, resolved.x, resolved.y);
+  };
+
+  const renderRagAnswer = (answer) => {
+    const inferNewsCategory = (headline = '', details = '') => {
+      const text = `${headline} ${details}`.toLowerCase();
+      if (/(trump|senator|booker|election|white house|congress|politic|newsom|governor|state of emergency)/.test(text)) return 'Politics';
+      if (/(ukrain|crimea|russian|europe|erdogan|erdoğan|france|canadian|world|turkey|seminenary|seminary|orthodox|heat wave)/.test(text)) return 'World News';
+      if (/(open golf|championship|sports|u\.s\. open|wyndham clark)/.test(text)) return 'Sports';
+      if (/(concert|rod stewart|music|culture|movie|television)/.test(text)) return 'Culture';
+      if (/(radio telescope|space|science|technology|nevada desert|array)/.test(text)) return 'Science & Tech';
+      if (/(dies|madison square garden|california|l\.a\.|los angeles|u\.s\.|fire|balcony)/.test(text)) return 'U.S. News';
+      return 'General News';
+    };
+
+    const groupNewsRows = (rows = []) => {
+      const grouped = {};
+      rows.forEach(item => {
+        let row = item;
+        if (typeof row === 'string') {
+          if (row.includes(' - ')) {
+            const [headline, ...detailParts] = row.split(' - ');
+            row = { headline: headline.trim(), details: detailParts.join(' - ').trim() };
+          } else {
+            row = { headline: row, details: '' };
+          }
+        }
+        const headline = row.headline || row.HEADLINE || row.title || row.TITLE || 'Untitled';
+        const details = row.details || row.DETAILS || row.summary || row.SUMMARY || '';
+        const category = row.category || row.CATEGORY || inferNewsCategory(headline, details);
+        grouped[category] = grouped[category] || [];
+        grouped[category].push({ headline, details });
+      });
+      return grouped;
+    };
+
+    const normalizeJsonLineAnswer = (value) => {
+      if (typeof value !== 'string') return null;
+      const lines = value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const jsonRows = [];
+      lines.forEach(line => {
+        if (!line.startsWith('{') || !line.endsWith('}')) return;
+        try {
+          jsonRows.push(JSON.parse(line));
+        } catch {
+          // Keep non-JSON text on the plain text path.
+        }
+      });
+      if (!jsonRows.length) return null;
+      return groupNewsRows(jsonRows);
+    };
+
+    const normalizeFlatNewsText = (value) => {
+      if (typeof value !== 'string') return null;
+      const lines = value.split(/\r?\n/).map(line => line.trim().replace(/^-+\s*/, '')).filter(Boolean);
+      const rows = [];
+      lines.forEach(line => {
+        if (line.toLowerCase().replace(/\s+/g, '_') === 'latest_news') return;
+        if (!line.includes(' - ')) return;
+        const [headline, ...detailParts] = line.split(' - ');
+        const details = detailParts.join(' - ').trim();
+        rows.push({ headline: headline.trim(), details });
+      });
+      return rows.length ? groupNewsRows(rows) : null;
+    };
+
+    if (answer === null || answer === undefined) {
+      return <p className="rag-answer-text">No answer was returned.</p>;
+    }
+    if (typeof answer === 'string' || typeof answer === 'number') {
+      const parsed = normalizeJsonLineAnswer(String(answer));
+      if (parsed) return renderRagAnswer(parsed);
+      const flatNews = normalizeFlatNewsText(String(answer));
+      if (flatNews) return renderRagAnswer(flatNews);
+      return <p className="rag-answer-text">{String(answer)}</p>;
+    }
+    if (Array.isArray(answer)) {
+      return (
+        <div className="rag-answer-list">
+          {answer.map((item, idx) => <span key={idx}>{typeof item === 'object' ? JSON.stringify(item) : String(item)}</span>)}
+        </div>
+      );
+    }
+    if (typeof answer === 'object') {
+      const normalizeGenericKey = (key) => key.toLowerCase().trim().replace(/\s+/g, '_');
+      const keys = Object.keys(answer).map(normalizeGenericKey);
+      if (keys.length && keys.every(key => ['latest_news', 'news', 'headlines', 'items', 'results'].includes(key))) {
+        const rows = Object.values(answer).flatMap(value => {
+          if (Array.isArray(value)) return value;
+          if (typeof value === 'string') {
+            return value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+          }
+          return [value];
+        });
+        return renderRagAnswer(groupNewsRows(rows));
+      }
+      return (
+        <div className="rag-category-grid">
+          {Object.entries(answer).map(([category, items]) => (
+            <div key={category} className="rag-category-card">
+              <div className="mini-card-title">{category}</div>
+              {Array.isArray(items) ? (
+                <div className="rag-answer-list">
+                  {items.map((item, idx) => (
+                    <span key={idx}>
+                      {typeof item === 'object'
+                        ? <><strong>{item.headline || item.title || 'Item'}</strong>{item.details || item.summary ? ` - ${item.details || item.summary}` : ''}</>
+                        : String(item)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="rag-answer-text">{typeof items === 'object' ? JSON.stringify(items) : String(items)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return <p className="rag-answer-text">{String(answer)}</p>;
+  };
+
+  const renderComparePreview = (pipeline) => {
+    const columns = pipeline?.columns || [];
+    const rows = pipeline?.preview || [];
+    if (!pipeline?.execution_success) {
+      return <div className="empty-state compact">{pipeline?.execution_error || 'No executable preview was returned.'}</div>;
+    }
+    if (!columns.length || !rows.length) {
+      return <div className="empty-state compact">Query ran successfully but returned no preview rows.</div>;
+    }
+    return (
+      <div className="table-container compare-preview-table">
+        <table>
+          <thead>
+            <tr>{columns.map((col, idx) => <th key={idx}>{col}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 10).map((row, rIdx) => (
+              <tr key={rIdx}>
+                {columns.map((col, cIdx) => <td key={cIdx}>{String(row[col] ?? '')}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const calculateSqlIntentScore = (sql = '', prompt = '') => {
+    const text = String(sql || '').toLowerCase();
+    const ask = String(prompt || '').toLowerCase();
+    let score = 0;
+    const matches = [];
+    if (!text.trim()) return { score, matches };
+    if (/\bcount\s*\(/.test(text) && /(how many|count)/.test(ask)) {
+      score += 25;
+      matches.push('uses COUNT for a count question');
+    }
+    if (/\bwhere\b/.test(text)) {
+      score += 20;
+      matches.push('applies filtering criteria');
+    }
+    if (/select\s+\*/.test(text)) {
+      score -= 25;
+      matches.push('uses broad SELECT * instead of an answer-shaped projection');
+    }
+    if (/(more than|less than|within|last|opened|10k|10000)/.test(ask) && /(>|<|between|dateadd|try_to_date|try_to_timestamp|current_date)/.test(text)) {
+      score += 20;
+      matches.push('models threshold or date-window logic');
+    }
+    if (/(credit|limit)/.test(ask) && /credit/.test(text) && /limit/.test(text)) {
+      score += 15;
+      matches.push('uses the credit-limit field concept');
+    }
+    if (/chip/.test(ask) && /chip/.test(text)) {
+      score += 10;
+      matches.push('uses chip criteria');
+    }
+    if (/debit/.test(ask) && /debit/.test(text)) {
+      score += 10;
+      matches.push('uses debit-card criteria');
+    }
+    if (/(card|cards|debit|credit)/.test(ask) && /card/.test(text)) {
+      score += 10;
+      matches.push('selects a card-oriented table or field');
+    }
+    if (/(\$|10k|10000|amount|credit limit)/.test(ask) && /(regexp_replace|replace|try_cast|try_to_number|try_cast)/.test(text)) {
+      score += 15;
+      matches.push('handles formatted numeric text safely');
+    }
+    if (/(opened|last|year|date)/.test(ask) && /(try_to_date|try_to_timestamp|dateadd|current_date)/.test(text)) {
+      score += 15;
+      matches.push('handles date logic safely');
+    }
+    return { score, matches };
+  };
+
+  const renderComparePipeline = (pipeline, type) => {
+    if (!pipeline) return null;
+    const isAi = type === 'ai';
+    return (
+      <div className={`compare-pipeline-card ${isAi ? 'ai' : 'native'}`}>
+        <div className="compare-pipeline-header">
+          <div>
+            <span className="compare-pipeline-kicker">{isAi ? 'Provider Pipeline' : 'Python Pipeline'}</span>
+            <h3>{pipeline.label}</h3>
+          </div>
+          <span className={`compare-status ${pipeline.execution_success ? 'success' : 'error'}`}>
+            {pipeline.execution_success ? 'Executed' : 'Needs Review'}
+          </span>
+        </div>
+        {pipeline.repair?.attempted && (
+          <div className={`compare-repair-note ${pipeline.repair.success ? 'success' : 'error'}`}>
+            <strong>{pipeline.repair.success ? 'Auto-repaired after Snowflake error' : 'Auto-repair attempted'}</strong>
+            <span>{pipeline.repair.original_error}</span>
+          </div>
+        )}
+        <div className="compare-metric-grid">
+          <div><span>Total Time</span><strong>{pipeline.total_processing_time_ms || 0} ms</strong></div>
+          <div><span>SQL Time</span><strong>{pipeline.sql_execution_time_ms || 0} ms</strong></div>
+          <div><span>Rows</span><strong>{pipeline.rows_returned || 0}</strong></div>
+          <div><span>Confidence</span><strong>{pipeline.confidence || '-'}</strong></div>
+          {isAi && <div><span>Tokens</span><strong>{pipeline.tokens?.total || 0}</strong></div>}
+          {isAi && <div><span>API Cost</span><strong>${Number(pipeline.estimated_api_cost || 0).toFixed(4)}</strong></div>}
+        </div>
+        <div className="compare-section">
+          <div className="compare-section-title">
+            <span>Generated SQL</span>
+            <div className="compare-code-actions">
+              {renderRowLimitSelect()}
+              <button className="btn btn-secondary btn-small" onClick={() => handleCopy(pipeline.generated_sql || '')}>
+                {copiedQuery === pipeline.generated_sql ? <Check size={12} /> : <Copy size={12} />} Copy
+              </button>
+            </div>
+          </div>
+          <pre className="code-block compare-code-block">{pipeline.generated_sql || pipeline.error || 'No SQL generated.'}</pre>
+        </div>
+        <div className="compare-section">
+          <div className="compare-section-title"><span>Explanation</span></div>
+          <p className="compare-text">{pipeline.explanation || 'No explanation returned.'}</p>
+        </div>
+        <div className="compare-section">
+          <div className="compare-section-title"><span>Optimization Suggestions</span></div>
+          <div className="compare-suggestion-list">
+            {(pipeline.optimization_suggestions || []).map((item, idx) => <span key={idx}>{item}</span>)}
+          </div>
+        </div>
+        <div className="compare-section">
+          <div className="compare-section-title"><span>Query Result Preview</span></div>
+          {renderComparePreview(pipeline)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderComparisonDashboard = (comparison) => {
+    if (!comparison) return null;
+    const summary = comparison.summary || {};
+    const nativeIntent = calculateSqlIntentScore(comparison.native?.generated_sql, comparison.prompt);
+    const aiIntent = calculateSqlIntentScore(comparison.ai?.generated_sql, comparison.prompt);
+    const intentScores = {
+      native: Math.max(summary.intent_scores?.native ?? -999, nativeIntent.score),
+      ai: Math.max(summary.intent_scores?.ai ?? -999, aiIntent.score),
+      native_matches: (nativeIntent.matches.length ? nativeIntent.matches : summary.intent_scores?.native_matches) || [],
+      ai_matches: (aiIntent.matches.length ? aiIntent.matches : summary.intent_scores?.ai_matches) || [],
+    };
+    const derivedWhyAiWon = intentScores.ai > intentScores.native + 15
+      ? `AI won because it matched the user's question more closely than the native path. The AI SQL ${intentScores.ai_matches.slice(0, 4).join(', ') || 'encodes the requested business logic'}, while the native SQL ${intentScores.native_matches.slice(0, 2).join(', ') || 'does not capture the requested criteria'}. Execution speed is secondary when a faster query does not answer the question.`
+      : summary.why_ai_won;
+    return (
+      <div className="compare-dashboard">
+        <div className="compare-hero">
+          <div>
+            <span className="compare-pipeline-kicker">Original Prompt</span>
+            <h2>{comparison.prompt || 'Native vs AI Comparison'}</h2>
+          </div>
+          <div className={`compare-recommendation ${String(summary.recommended || '').toLowerCase()}`}>
+            Recommended: {summary.recommended || 'Review'}
+          </div>
+        </div>
+        <div className="compare-grid">
+          {renderComparePipeline(comparison.native, 'native')}
+          {renderComparePipeline(comparison.ai, 'ai')}
+        </div>
+        <div className="compare-summary-panel">
+          <div className="compare-summary-main">
+            <span className="compare-pipeline-kicker">Comparison Summary</span>
+            <h3>{summary.summary || 'Review the two pipelines side by side.'}</h3>
+            <p>{summary.performance}</p>
+          </div>
+          <div className="compare-summary-grid">
+            <div><span>SQL Readability</span><strong>{summary.readability || '-'}</strong></div>
+            <div><span>AI Optimizations</span><strong>{summary.ai_optimization || '-'}</strong></div>
+            <div><span>Business Insight</span><strong>{summary.business_insights || '-'}</strong></div>
+            <div><span>Cost Savings</span><strong>{summary.cost_savings || '-'}</strong></div>
+          </div>
+          <div className="why-ai-won">
+            <span>Why AI Won</span>
+            <p>{derivedWhyAiWon || 'AI adds the most value when the request benefits from explanation, optimization, and business interpretation.'}</p>
+            {intentScores && (
+              <div className="intent-score-grid">
+                <div>
+                  <strong>Native Intent Score: {intentScores.native ?? 0}</strong>
+                  <small>{(intentScores.native_matches || []).slice(0, 3).join(', ') || 'No strong intent match detected'}</small>
+                </div>
+                <div>
+                  <strong>AI Intent Score: {intentScores.ai ?? 0}</strong>
+                  <small>{(intentScores.ai_matches || []).slice(0, 3).join(', ') || 'No strong intent match detected'}</small>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAiTransparency = (metadata) => {
+    if (!metadata || Object.keys(metadata).length === 0) return null;
+    return (
+      <div className="ai-transparency-card">
+        <div className="ai-transparency-header">
+          <span>{metadata.processing_mode || 'Native'} Processing</span>
+          <span>{metadata.provider || 'Native'} / {metadata.model || 'Rules'}</span>
+        </div>
+        <div className="ai-transparency-grid">
+          <span>Time: {metadata.processing_time_ms ?? '-'} ms</span>
+          <span>Confidence: {metadata.confidence || '-'}</span>
+          <span>Tokens: {(metadata.prompt_tokens || 0) + (metadata.completion_tokens || 0)}</span>
+          <span>{metadata.fallback_used ? 'Fallback used' : 'AI path'}</span>
+        </div>
+        {(metadata.assumptions || metadata.error) && (
+          <p>{metadata.error ? `Fallback reason: ${metadata.error}` : metadata.assumptions}</p>
+        )}
+      </div>
+    );
+  };
 
   const renderSqlResultsCard = () => {
     if (!workbenchSqlResults && !workbenchSqlExecuting) return null;
@@ -3062,6 +3679,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'chat' ? 'active' : ''}`}
             onClick={() => setActiveTab('chat')}
+            title="Hybrid: Native SQL execution plus optional LLM for natural language, Compare, and repair."
           >
             <MessageSquare size={16} />
             <span>AI Analyst Studio</span>
@@ -3070,6 +3688,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'sql' ? 'active' : ''}`}
             onClick={() => setActiveTab('sql')}
+            title="Hybrid: Native cost advisor plus optional LLM explanation and optimization."
           >
             <Terminal size={16} />
             <span>SQL Explainer / Tuning</span>
@@ -3078,6 +3697,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'tableDetails' ? 'active' : ''}`}
             onClick={() => setActiveTab('tableDetails')}
+            title="Hybrid: Native metadata/profiling plus optional LLM summaries and descriptions."
           >
             <Database size={16} />
             <span>Table Intelligence Studio</span>
@@ -3086,6 +3706,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'catalogSearch' ? 'active' : ''}`}
             onClick={() => setActiveTab('catalogSearch')}
+            title="Native: Python and Snowflake metadata search only."
           >
             <Layers size={16} />
             <span>Column / Table Search</span>
@@ -3094,6 +3715,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'anomaly' ? 'active' : ''}`}
             onClick={() => setActiveTab('anomaly')}
+            title="Native: statistical anomaly rules and Snowflake SQL only."
           >
             <AlertTriangle size={16} />
             <span>Anomaly Detector</span>
@@ -3102,6 +3724,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'freshness' ? 'active' : ''}`}
             onClick={() => setActiveTab('freshness')}
+            title="Native: freshness calculations and trend checks only."
           >
             <RefreshCw size={16} />
             <span>Data Freshness</span>
@@ -3110,6 +3733,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'cost' ? 'active' : ''}`}
             onClick={() => { setActiveTab('cost'); fetchCostDashboard(); }}
+            title="Native: Snowflake cost metadata and query history analysis only."
           >
             <DollarSign size={16} />
             <span>Cost Analyzer</span>
@@ -3118,6 +3742,7 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'rag' ? 'active' : ''}`}
             onClick={() => { setActiveTab('rag'); fetchRagDocuments(); }}
+            title="Hybrid: Native ingestion/retrieval plus optional LLM answer synthesis."
           >
             <HelpCircle size={16} />
             <span>Document Hub</span>
@@ -3126,31 +3751,148 @@ function App() {
           <div 
             className={`sidebar-item ${activeTab === 'queryLog' ? 'active' : ''}`}
             onClick={() => { setActiveTab('queryLog'); loadWorkbenchQueryLog(); }}
+            title="Native: persisted local query log only."
           >
             <Terminal size={16} />
             <span>Query Log</span>
           </div>
 
+          <div
+            className={`sidebar-item ${activeTab === 'executionFootprint' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('executionFootprint'); refreshAiUsage(); }}
+          >
+            <Activity size={16} />
+            <span>Execution Footprint</span>
+          </div>
+
+          <div className="sidebar-ai-config">
+            <button type="button" className="sidebar-section-toggle" onClick={() => setAiConfigOpen(prev => !prev)}>
+              <span>AI CONFIGURATION</span>
+              <span>{aiConfigOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            {aiConfigOpen && (
+              <div className="sidebar-section-content">
+                <div className="ai-mode-pill">
+                  <span className={`ai-status-dot ${isAiConnected ? 'connected' : isAiConfigured ? 'configured' : 'native'}`}></span>
+                  {aiConfig.processing_mode === 'compare'
+                    ? (isAiConnected ? 'Compare Ready' : 'Compare Needs AI Test')
+                    : isAiConnected ? 'AI Ready' : isAiConfigured ? 'AI Configured' : 'Native Mode'}
+                </div>
+                <label className="sidebar-field">
+                  <span>Execution Mode</span>
+                  <select
+                    value={aiConfig.processing_mode || 'native'}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      saveAiConfig({ processing_mode: mode, enabled: mode !== 'native' });
+                    }}
+                  >
+                    <option value="native">Native</option>
+                    <option value="ai">AI</option>
+                    <option value="compare">Compare</option>
+                  </select>
+                </label>
+                <div className={`ai-provider-fields ${aiNeedsConfig ? '' : 'disabled'}`}>
+                <label className="sidebar-field">
+                  <span>AI Provider</span>
+                  <select
+                    value={aiConfig.provider || 'openai'}
+                    disabled={!aiNeedsConfig}
+                    onChange={(e) => {
+                      const provider = e.target.value;
+                      const models = aiConfig.providers?.find(item => item.id === provider)?.models || [];
+                      saveAiConfig({ provider, model: models[0] || '' });
+                    }}
+                  >
+                    {(aiConfig.providers || []).map(provider => (
+                      <option key={provider.id} value={provider.id}>{provider.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="sidebar-field">
+                  <span>Model</span>
+                  <select value={aiConfig.model || ''} disabled={!aiNeedsConfig} onChange={(e) => saveAiConfig({ model: e.target.value })}>
+                    {((aiConfig.providers || []).find(item => item.id === aiConfig.provider)?.models || [aiConfig.model || '']).map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="sidebar-field">
+                  <span>API Key {aiConfig.has_api_key ? '(set)' : ''}</span>
+                  <input
+                    type="password"
+                    value={aiApiKey}
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                    onBlur={() => aiApiKey.trim() && saveAiConfig({ api_key: aiApiKey.trim() })}
+                    placeholder={aiConfig.has_api_key ? 'Stored in session' : 'Paste provider API key'}
+                    disabled={!aiNeedsConfig}
+                  />
+                </label>
+                <label className="sidebar-field">
+                  <span>Base URL (Optional)</span>
+                  <input
+                    value={aiConfig.base_url || ''}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, base_url: e.target.value }))}
+                    onBlur={() => saveAiConfig({ base_url: aiConfig.base_url || '' })}
+                    placeholder="Optional except Azure/custom endpoints"
+                    disabled={!aiNeedsConfig}
+                  />
+                </label>
+                </div>
+                <div className={`ai-connection-note ${aiConfig.connection_status?.status || ''}`}>
+                  {aiConfig.connection_status?.message || 'Not tested'}
+                </div>
+                <div className="ai-config-actions">
+                  <button className="btn btn-secondary btn-small" onClick={testAiConnection} disabled={!aiNeedsConfig || aiTesting || aiSaving}>
+                    {aiTesting ? 'Testing...' : 'Test'}
+                  </button>
+                  <button className="btn btn-secondary btn-small" onClick={clearAiConversation}>
+                    Clear Chat
+                  </button>
+                </div>
+                <div className="ai-usage-mini">
+                  <div><span>Provider</span><strong>{aiConfig.usage?.active_provider || aiConfig.provider}</strong></div>
+                  <div><span>Prompts</span><strong>{aiConfig.usage?.prompt_count || 0}</strong></div>
+                  <div><span>Tokens</span><strong>{aiConfig.usage?.total_tokens || 0}</strong></div>
+                  <div><span>Cost</span><strong>${Number(aiConfig.usage?.estimated_cost || 0).toFixed(4)}</strong></div>
+                  <div><span>Avg Time</span><strong>{aiConfig.usage?.avg_response_time_ms || 0} ms</strong></div>
+                  <div><span>Last OK</span><strong>{aiConfig.usage?.last_successful_connection || '-'}</strong></div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {(connectionStatus.mode === 'MOCK' || connectionStatus.mode.startsWith('SNOWFLAKE')) && (
             <div className="sidebar-session-context">
-              <div className="sidebar-footer-label">SESSION CONTEXT</div>
-              <SearchableSelect
-                value={activeRole}
-                onChange={handleRoleChange}
-                options={roles}
-                placeholder="Select Role"
-                label="ROLE"
-                className="sidebar-select"
-              />
+              <button type="button" className="sidebar-section-toggle" onClick={() => setSnowflakeContextOpen(prev => !prev)}>
+                <span>SNOWFLAKE / SESSION</span>
+                <span>{snowflakeContextOpen ? 'Hide' : 'Show'}</span>
+              </button>
+              {snowflakeContextOpen && (
+                <div className="sidebar-section-content">
+                  <div className="ai-mode-pill">
+                    <span className={`ai-status-dot ${connectionStatus.status === 'connected' ? 'connected' : 'native'}`}></span>
+                    {connectionStatus.mode.replace('_FALLBACK', ' Fallback')}
+                  </div>
+                  <SearchableSelect
+                    value={activeRole}
+                    onChange={handleRoleChange}
+                    options={roles}
+                    placeholder="Select Role"
+                    label="ROLE"
+                    className="sidebar-select"
+                  />
 
-              <SearchableSelect
-                value={activeWarehouse}
-                onChange={handleWarehouseChange}
-                options={warehouses}
-                placeholder="Select Warehouse"
-                label="WH"
-                className="sidebar-select"
-              />
+                  <SearchableSelect
+                    value={activeWarehouse}
+                    onChange={handleWarehouseChange}
+                    options={warehouses}
+                    placeholder="Select Warehouse"
+                    label="WH"
+                    className="sidebar-select"
+                  />
+                </div>
+              )}
             </div>
           )}
         </nav>
@@ -3193,6 +3935,7 @@ function App() {
                 {activeTab === 'rag' && 'Document Hub'}
                 {activeTab === 'queryLog' && 'Query Log'}
                 {activeTab === 'cost' && 'Snowflake Query Cost Analyzer'}
+                {activeTab === 'executionFootprint' && 'Execution Footprint'}
               </h1>
               <p>
                 {activeTab === 'chat' && 'Chat with data and build report views from natural language.'}
@@ -3204,10 +3947,24 @@ function App() {
                 {activeTab === 'rag' && 'Learn web pages, pasted text, JSON, CSV, Excel, and other files, then answer questions with cited source chunks.'}
                 {activeTab === 'queryLog' && 'Review persisted SQL executed from chat and workbench applications.'}
                 {activeTab === 'cost' && 'Track credit consumption, metering trends, and expensive runs.'}
+                {activeTab === 'executionFootprint' && 'See which applications use LLM tokens versus native Python/Snowflake logic.'}
               </p>
             </div>
 
             <div className="header-actions">
+              {currentExecutionApp && (
+                <div className={`current-app-mode ${currentExecutionApp.mode.toLowerCase()}`} title={currentExecutionApp.note}>
+                  {currentExecutionApp.mode}
+                </div>
+              )}
+              <div className="processing-mode-badge">
+                <Sparkles size={12} />
+                {aiConfig.processing_mode === 'compare'
+                  ? `${isAiConnected ? 'Compare Ready' : 'Compare Pending Test'}: Native + ${aiConfig.provider_label || aiConfig.provider} / ${aiConfig.model}`
+                  : aiConfig.enabled && aiConfig.processing_mode === 'ai'
+                    ? `${isAiConnected ? 'AI Ready' : 'AI Pending Test'}: ${aiConfig.provider_label || aiConfig.provider} / ${aiConfig.model}`
+                    : 'Native Python Mode'}
+              </div>
               <button
                 className={`tips-toggle ${helpTipsOpen ? 'active' : ''}`}
                 onClick={() => setHelpTipsOpen(prev => !prev)}
@@ -3365,28 +4122,34 @@ function App() {
                           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '10px', textTransform: 'uppercase' }}>
                             Auto-Generated Visual: {msg.visualization.type} chart
                           </div>
-                          {msg.visualization.type === 'bar' && msg.result?.success && 
-                            renderSvgBarChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
-                          }
-                          {msg.visualization.type === 'line' && msg.result?.success && 
-                            renderSvgLineChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase())
-                          }
-                          {msg.visualization.type === 'pie' && msg.result?.success && 
-                            renderSvgBarChart(msg.result.data, msg.visualization.x.toUpperCase(), msg.visualization.y.toUpperCase()) // Fallback pie layout
-                          }
-                          {!msg.result && (
-                            <div className="text-secondary" style={{ fontSize: '11px' }}>
-                              Click "Execute" on SQL above to render this visualization dynamically.
-                            </div>
-                          )}
+                          {renderChatVisualization(msg)}
                         </div>
                       )}
+                      {msg.compareResult && (
+                        <div style={{ marginTop: '12px' }}>
+                          {renderComparisonDashboard(msg.compareResult)}
+                        </div>
+                      )}
+                      {renderAiTransparency(msg.aiMetadata)}
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
                     </div>
 
                     <div className="chat-input-area">
+                      <div className="chat-session-toolbar">
+                        <span>
+                          Context: {activeDb || 'No DB'} / {activeSchema || 'No Schema'}{activeTable ? ` / ${activeTable}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-small"
+                          onClick={resetChatMessages}
+                          disabled={executingChatQuery}
+                        >
+                          <Trash2 size={12} /> Clear Chat
+                        </button>
+                      </div>
                       <div className="chat-input-container">
                         <input 
                           type="text" 
@@ -3493,7 +4256,7 @@ function App() {
                     </div>
 
                     <div className="ask-dataset-results">
-                      {!askDatasetResult && !askDatasetLoading && (
+                      {!askDatasetResult && !askDatasetCompareResult && !askDatasetLoading && (
                         <div className="empty-state ask-dataset-empty">
                           Ask a question to generate SQL, run it in Snowflake, and turn the result into a chart, insight summary, and explanation.
                         </div>
@@ -3501,7 +4264,15 @@ function App() {
 
                       {askDatasetLoading && (
                         <div className="empty-state ask-dataset-empty">
-                          Generating SQL, executing it, and shaping the answer...
+                          {aiConfig.processing_mode === 'compare'
+                            ? 'Running Native and AI pipelines side by side...'
+                            : 'Generating SQL, executing it, and shaping the answer...'}
+                        </div>
+                      )}
+
+                      {askDatasetCompareResult && (
+                        <div className="glass-card compare-result-card">
+                          {renderComparisonDashboard(askDatasetCompareResult)}
                         </div>
                       )}
 
@@ -3745,6 +4516,7 @@ function App() {
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-purple)', marginBottom: '4px' }}>BUSINESS EXPLANATION:</div>
                         <p style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{sqlOptimization.explanation}</p>
                       </div>
+                      {renderAiTransparency(sqlOptimization.ai_metadata)}
 
                       <div>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-red)', marginBottom: '6px' }}>INEFFICIENCIES DETECTED:</div>
@@ -5065,7 +5837,105 @@ function App() {
             </div>
           )}
 
-          {activeTab !== 'chat' && renderSqlResultsCard()}
+          {activeTab === 'executionFootprint' && (
+            <div className="panel-body">
+              <div className="glass-card execution-overview-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Activity size={16} /> Execution Footprint</span>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-secondary btn-small" onClick={refreshAiUsage}>Refresh Usage</button>
+                    <button className="btn btn-danger btn-small" onClick={resetAiUsage}>Reset Usage</button>
+                  </div>
+                </div>
+                <div className="execution-persist-note">
+                  Usage is accumulated in the backend workspace until you reset it. File: {aiConfig.usage?.usage_file || 'backend/ai_usage.json'}
+                </div>
+                <div className="execution-summary-grid">
+                  <div><span>Execution Mode</span><strong>{aiConfig.processing_mode || 'native'}</strong></div>
+                  <div><span>Provider</span><strong>{aiConfig.usage?.active_provider || aiConfig.provider || '-'}</strong></div>
+                  <div><span>Model</span><strong>{aiConfig.usage?.model || aiConfig.model || '-'}</strong></div>
+                  <div><span>Total LLM Prompts</span><strong>{aiConfig.usage?.prompt_count || 0}</strong></div>
+                  <div><span>Total Tokens</span><strong>{Number(aiConfig.usage?.total_tokens || 0).toLocaleString()}</strong></div>
+                  <div><span>Estimated API Cost</span><strong>${Number(aiConfig.usage?.estimated_cost || 0).toFixed(4)}</strong></div>
+                </div>
+              </div>
+
+              <div className="execution-app-grid">
+                {appExecutionCatalog.map(app => {
+                  const usage = getAppUsage(app);
+                  return (
+                    <div key={app.id} className="glass-card execution-app-card">
+                      <div className="execution-app-header">
+                        <div>
+                          <span className="compare-pipeline-kicker">{app.mode === 'Native' ? 'Python / Snowflake SQL' : 'Native + Optional LLM'}</span>
+                          <h3>{app.name}</h3>
+                        </div>
+                        <span className={`execution-mode-pill ${app.mode.toLowerCase()}`}>{app.mode}</span>
+                      </div>
+                      <div className="execution-token-row">
+                        <div><span>LLM Calls</span><strong>{usage.prompt_count}</strong></div>
+                        <div><span>Tokens</span><strong>{usage.total_tokens.toLocaleString()}</strong></div>
+                        <div><span>Cost</span><strong>${usage.estimated_cost.toFixed(4)}</strong></div>
+                      </div>
+                      <div className="execution-details-grid">
+                        <div><span>Native Python / SQL</span><p>{app.nativeWork}</p></div>
+                        <div><span>LLM Usage</span><p>{app.llmWork}</p></div>
+                      </div>
+                      <div className="execution-operation-list">
+                        {(app.llmOps.length ? app.llmOps : ['No LLM operations']).map(op => <span key={op}>{op}</span>)}
+                      </div>
+                      <p className="execution-note">{app.note}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="glass-card execution-events-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Terminal size={16} /> Recent LLM Usage Events</span>
+                  <span className="status-badge">{aiConfig.usage?.events?.length || 0} shown</span>
+                </div>
+                {aiConfig.usage?.events?.length ? (
+                  <div className="table-container execution-events-table">
+                    <table className="custom-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Operation</th>
+                          <th>Provider</th>
+                          <th>Model</th>
+                          <th>Prompt</th>
+                          <th>Completion</th>
+                          <th>Total</th>
+                          <th>Cost</th>
+                          <th>Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...(aiConfig.usage.events || [])].slice(-50).reverse().map((event, idx) => (
+                          <tr key={`${event.timestamp}-${idx}`}>
+                            <td>{event.timestamp}</td>
+                            <td><span className="status-badge">{event.operation}</span></td>
+                            <td>{event.provider}</td>
+                            <td>{event.model}</td>
+                            <td>{Number(event.prompt_tokens || 0).toLocaleString()}</td>
+                            <td>{Number(event.completion_tokens || 0).toLocaleString()}</td>
+                            <td>{Number(event.total_tokens || 0).toLocaleString()}</td>
+                            <td>${Number(event.estimated_cost || 0).toFixed(4)}</td>
+                            <td>{event.response_time_ms} ms</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state">No LLM usage has been recorded yet. Run AI or Compare mode to populate this dashboard.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab !== 'chat' && activeTab !== 'executionFootprint' && renderSqlResultsCard()}
 
           {/* TAB 3: Metadata & Dictionary */}
           {activeTab === 'metadata' && (
@@ -5762,7 +6632,8 @@ function App() {
                         <Sparkles size={14} color="var(--accent-cyan)" />
                         <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--accent-cyan)' }}>Verified Answer</span>
                       </div>
-                      <p style={{ fontSize: '13px', color: '#ffffff', lineHeight: '1.5' }}>{ragResult.answer}</p>
+                      {renderRagAnswer(ragResult.answer)}
+                      {renderAiTransparency(ragResult.ai_metadata)}
                       
                       {ragResult.citations?.length > 0 && (
                         <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -5776,19 +6647,24 @@ function App() {
                     </div>
 
                     {/* Source Documents */}
-                    <div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>RETRIEVED KNOWLEDGE SOURCE SNIPPETS:</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {ragResult.source_chunks?.map((chunk, idx) => (
-                          <div key={idx} className="glass-card" style={{ padding: '14px', backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: 'var(--accent-purple)' }}>
-                              <span>{chunk.TITLE}</span>
-                              <span className="status-badge" style={{ fontSize: '9px' }}>{chunk.SOURCE_TYPE}</span>
+                    <div className="rag-source-panel">
+                      <button type="button" className="rag-source-toggle" onClick={() => setRagSourcesOpen(prev => !prev)}>
+                        <span>Retrieved Knowledge Source Snippets ({ragResult.source_chunks?.length || 0})</span>
+                        <span>{ragSourcesOpen ? 'Hide' : 'Show'}</span>
+                      </button>
+                      {ragSourcesOpen && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                          {ragResult.source_chunks?.map((chunk, idx) => (
+                            <div key={idx} className="glass-card" style={{ padding: '14px', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '12px', fontWeight: 600, color: 'var(--accent-purple)' }}>
+                                <span>{chunk.TITLE}</span>
+                                <span className="status-badge" style={{ fontSize: '9px' }}>{chunk.SOURCE_TYPE}</span>
+                              </div>
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>{chunk.CONTENT}</p>
                             </div>
-                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>{chunk.CONTENT}</p>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

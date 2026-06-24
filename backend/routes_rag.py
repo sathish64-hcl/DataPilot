@@ -358,7 +358,8 @@ async def search_rag(query: str = ""):
             "answer": "I could not find relevant indexed content for that question. The page may not have been learned correctly, or the question may need a source-specific keyword such as a movie title, page name, or rating term.",
             "citations": [],
             "source_chunks": [],
-            "retrieval_status": "no_match"
+            "retrieval_status": "no_match",
+            "ai_metadata": {}
         }
         
     answer_res = ai.answer_rag(query, matched_chunks)
@@ -367,7 +368,8 @@ async def search_rag(query: str = ""):
         "answer": answer_res.get("answer", ""),
         "citations": answer_res.get("citations", []),
         "source_chunks": matched_chunks,
-        "retrieval_status": "matched"
+        "retrieval_status": "matched",
+        "ai_metadata": answer_res.get("ai_metadata", {})
     }
 
 def parse_rss_feed(url: str):

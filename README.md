@@ -65,3 +65,35 @@ C:\Users\mvmen\anaconda3\python.exe -m compileall .
 ```
 
 The backend attempts to connect to Snowflake on startup. If Snowflake is unreachable, it falls back to the bundled SQLite mock database so the UI remains usable.
+
+## Package For Restricted Laptops
+
+If a target laptop cannot run `pip install` or `npm install`, build a portable bundle on another Windows machine where installs are allowed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_portable.ps1
+```
+
+Copy the generated folder to the target laptop:
+
+```text
+dist\DataPilotStudio
+```
+
+Run:
+
+```text
+DataPilotStudio.exe
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+The portable app does not require Python packages or Node packages on the target laptop. Runtime files are written under the portable folder:
+
+- `data\data_pilot_mock.db`
+- `data\query_log.jsonl`
+- `data\ai_usage.json`
