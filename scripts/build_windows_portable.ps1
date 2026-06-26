@@ -10,6 +10,7 @@ $Frontend = Join-Path $Root "frontend"
 $BackendReq = Join-Path $Root "backend\requirements.txt"
 $Spec = Join-Path $Root "DataPilotStudio.spec"
 $PortableDir = Join-Path $Root "dist\DataPilotStudio"
+$PortableInternalDir = Join-Path $PortableDir "_internal"
 
 Write-Host "== Data Pilot Studio portable build ==" -ForegroundColor Cyan
 Write-Host "Root: $Root"
@@ -45,6 +46,38 @@ try {
 }
 finally {
   Pop-Location
+}
+
+$PythonCommand = Get-Command $PythonExe -ErrorAction SilentlyContinue
+if ($PythonCommand -and $PythonCommand.Source) {
+  $PythonHome = Split-Path -Parent $PythonCommand.Source
+}
+else {
+  $PythonHome = Split-Path -Parent $PythonExe
+}
+$FfiSearchDirs = @(
+  (Join-Path $PythonHome "Library\bin"),
+  (Join-Path $PythonHome "..\Library\bin"),
+  (Join-Path $env:USERPROFILE "anaconda3\Library\bin"),
+  (Join-Path $env:USERPROFILE "miniconda3\Library\bin")
+)
+
+$FfiFiles = @()
+foreach ($Dir in $FfiSearchDirs) {
+  $ResolvedDir = Resolve-Path $Dir -ErrorAction SilentlyContinue
+  if ($ResolvedDir) {
+    $FfiFiles += Get-ChildItem -LiteralPath $ResolvedDir.Path -Filter "ffi*.dll" -ErrorAction SilentlyContinue
+  }
+}
+
+if ($FfiFiles.Count -gt 0) {
+  foreach ($Ffi in ($FfiFiles | Sort-Object FullName -Unique)) {
+    Copy-Item -Force $Ffi.FullName (Join-Path $PortableInternalDir $Ffi.Name)
+  }
+}
+
+if (!(Test-Path (Join-Path $PortableInternalDir "ffi.dll")) -and !(Test-Path (Join-Path $PortableInternalDir "ffi-8.dll")) -and !(Test-Path (Join-Path $PortableInternalDir "ffi-7.dll"))) {
+  throw "Portable build is missing ffi.dll/ffi-*.dll required by _ctypes.pyd. Check the Python runtime used for packaging."
 }
 
 $DataDir = Join-Path $PortableDir "data"

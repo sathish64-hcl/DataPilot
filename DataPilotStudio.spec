@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
@@ -14,6 +15,8 @@ datas += collect_data_files("snowflake.connector")
 
 binaries = []
 for dll_dir in (
+    Path(sys.base_prefix) / "Library" / "bin",
+    Path(sys.prefix) / "Library" / "bin",
     Path.home() / "anaconda3" / "Library" / "bin",
     Path.home() / "miniconda3" / "Library" / "bin",
 ):
