@@ -591,6 +591,15 @@ function App() {
       note: 'No token usage.'
     },
     {
+      id: 'incidentCommand',
+      name: 'Incident Command Center',
+      mode: 'Hybrid',
+      llmOps: ['incident_investigation', 'nl_to_sql_compare'],
+      nativeWork: 'Deterministic incident data pack, KPI dashboard, NL keyword routing, charts, and SQL preview.',
+      llmWork: 'Executive-style summaries, risk interpretation, recommendations, and Native-vs-AI comparison narrative.',
+      note: 'Demo app for enterprise incident management and platform customization.'
+    },
+    {
       id: 'queryLog',
       name: 'Query Log',
       mode: 'Native',
@@ -670,6 +679,13 @@ function App() {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [incidentInvestigation, setIncidentInvestigation] = useState(null);
   const [investigatingIncident, setInvestigatingIncident] = useState(false);
+  const [incidentCommandData, setIncidentCommandData] = useState(null);
+  const [incidentCommandLoading, setIncidentCommandLoading] = useState(false);
+  const [incidentLoadStatus, setIncidentLoadStatus] = useState('');
+  const [incidentLoadingToSnowflake, setIncidentLoadingToSnowflake] = useState(false);
+  const [incidentQuestion, setIncidentQuestion] = useState('Which application has the highest incident count?');
+  const [incidentQueryResult, setIncidentQueryResult] = useState(null);
+  const [incidentQueryLoading, setIncidentQueryLoading] = useState(false);
 
   // Utility copy ref
   const [copiedQuery, setCopiedQuery] = useState('');
@@ -710,6 +726,7 @@ function App() {
     fetchLineage();
     fetchDqDashboard();
     fetchIncidents();
+    fetchIncidentCommandDashboard();
     fetchRagDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1559,6 +1576,57 @@ function App() {
     setInvestigatingIncident(false);
   };
 
+  async function fetchIncidentCommandDashboard() {
+    setIncidentCommandLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/incident-command/dashboard`);
+      const data = await res.json();
+      setIncidentCommandData(data);
+    } catch (err) {
+      console.error('Error loading incident command dashboard:', err);
+      setIncidentCommandData({ error: err.message || 'Failed to load Incident Command Center.' });
+    }
+    setIncidentCommandLoading(false);
+  }
+
+  async function loadIncidentDemoToSnowflake() {
+    setIncidentLoadingToSnowflake(true);
+    setIncidentLoadStatus('Loading enterprise incident data into Snowflake...');
+    try {
+      const res = await fetch(`${API_BASE}/api/incident-command/load-demo-data`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        setIncidentLoadStatus(`Load failed: ${data.detail || data.error || 'Snowflake load failed.'}`);
+      } else {
+        const tableText = Object.entries(data.tables || {}).map(([table, count]) => `${table}: ${Number(count).toLocaleString()}`).join(', ');
+        setIncidentLoadStatus(`Loaded to ${data.database}.${data.schema}. ${tableText}`);
+        await fetchIncidentCommandDashboard();
+      }
+    } catch (err) {
+      setIncidentLoadStatus(`Load failed: ${err.message || 'Snowflake load failed.'}`);
+    }
+    setIncidentLoadingToSnowflake(false);
+  }
+
+  async function runIncidentCommandQuestion(question = incidentQuestion) {
+    const prompt = question.trim();
+    if (!prompt) return;
+    setIncidentQueryLoading(true);
+    setIncidentQueryResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/incident-command/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: prompt, mode: aiConfig.processing_mode || 'native' })
+      });
+      const data = await res.json();
+      setIncidentQueryResult(res.ok ? data : { success: false, error: data.detail || data.error || 'Incident query failed.' });
+    } catch (err) {
+      setIncidentQueryResult({ success: false, error: err.message || 'Incident query failed.' });
+    }
+    setIncidentQueryLoading(false);
+  }
+
   const patchWorkbenchScope = (appKey, patch) => {
     setAppScopes(prev => ({
       ...prev,
@@ -2089,6 +2157,18 @@ function App() {
           'Query-level costs use cloud-services credits; warehouse totals use metering history.',
           'Use scatter view to find long-running or unusually expensive queries.',
           'Pair this page with SQL Cost Advisor before running new expensive SQL.'
+        ]
+      };
+    }
+
+    if (activeTab === 'incidentCommand') {
+      return {
+        title: 'Incident Command Tips',
+        tips: [
+          'Use this app to show Data Pilot as a domain-configurable enterprise copilot, not only a Snowflake utility.',
+          'Switch Execution Mode to Compare before asking a question to show Native speed versus AI business context.',
+          'Use the sample prompts for critical incidents, SLA breaches, change-linked incidents, and cost impact.',
+          'The demo dataset is deterministic, so the dashboard stays stable during presentations.'
         ]
       };
     }
@@ -3781,6 +3861,15 @@ function App() {
             <span>Cost Analyzer</span>
           </div>
 
+          <div
+            className={`sidebar-item ${activeTab === 'incidentCommand' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('incidentCommand'); fetchIncidentCommandDashboard(); }}
+            title="Hybrid: enterprise incident KPIs, NL query, and Native-vs-AI comparison."
+          >
+            <Activity size={16} />
+            <span>Incident Command Center</span>
+          </div>
+
           <div 
             className={`sidebar-item ${activeTab === 'rag' ? 'active' : ''}`}
             onClick={() => { setActiveTab('rag'); fetchRagDocuments(); }}
@@ -3977,6 +4066,7 @@ function App() {
                 {activeTab === 'rag' && 'Document Hub'}
                 {activeTab === 'queryLog' && 'Query Log'}
                 {activeTab === 'cost' && 'Snowflake Query Cost Analyzer'}
+                {activeTab === 'incidentCommand' && 'Incident Command Center'}
                 {activeTab === 'executionFootprint' && 'Execution Footprint'}
               </h1>
               <p>
@@ -3989,6 +4079,7 @@ function App() {
                 {activeTab === 'rag' && 'Learn web pages, pasted text, JSON, CSV, Excel, and other files, then answer questions with cited source chunks.'}
                 {activeTab === 'queryLog' && 'Review persisted SQL executed from chat and workbench applications.'}
                 {activeTab === 'cost' && 'Track credit consumption, metering trends, and expensive runs.'}
+                {activeTab === 'incidentCommand' && 'Executive incident dashboard, natural-language triage, and Native-vs-AI comparison for enterprise operations.'}
                 {activeTab === 'executionFootprint' && 'See which applications use LLM tokens versus native Python/Snowflake logic.'}
               </p>
             </div>
@@ -6174,6 +6265,201 @@ function App() {
                   </>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'incidentCommand' && (
+            <div className="panel-body incident-command-page">
+              <div className="incident-command-hero">
+                <div>
+                  <div className="status-badge">Enterprise Incident Management Demo</div>
+                  <h2>Operational intelligence for 10,000 synthetic incidents</h2>
+                  <p>Demonstrates Data Pilot as a configurable enterprise copilot: apps, employees, changes, incidents, SLA, business cost, root cause, and comparison mode.</p>
+                  {incidentLoadStatus && <p className="incident-load-status">{incidentLoadStatus}</p>}
+                </div>
+                <div className="incident-hero-actions">
+                  <button className="btn btn-secondary btn-small" onClick={loadIncidentDemoToSnowflake} disabled={incidentLoadingToSnowflake}>
+                    <Database size={13} /> {incidentLoadingToSnowflake ? 'Loading...' : 'Load to Snowflake'}
+                  </button>
+                  <button className="btn btn-secondary btn-small" onClick={fetchIncidentCommandDashboard} disabled={incidentCommandLoading}>
+                    <RefreshCw size={13} /> {incidentCommandLoading ? 'Refreshing...' : 'Refresh Dashboard'}
+                  </button>
+                </div>
+              </div>
+
+              {incidentCommandData?.error && <div className="empty-state">{incidentCommandData.error}</div>}
+              {!incidentCommandData && !incidentCommandLoading && <div className="empty-state">Load the Incident Command Center to generate the enterprise incident dashboard.</div>}
+
+              {incidentCommandData && !incidentCommandData.error && (
+                <>
+                  <div className="incident-kpi-grid">
+                    {[
+                      ['Total Incidents', incidentCommandData.summary?.total_incidents?.toLocaleString(), ''],
+                      ['Open Incidents', incidentCommandData.summary?.open_incidents?.toLocaleString(), 'orange'],
+                      ['Critical', incidentCommandData.summary?.critical_incidents?.toLocaleString(), 'red'],
+                      ['Avg Resolution', `${incidentCommandData.summary?.avg_resolution_hours}h`, ''],
+                      ['SLA Compliance', `${incidentCommandData.summary?.sla_compliance_pct}%`, 'green'],
+                      ['Business Cost', `$${Number(incidentCommandData.summary?.business_cost || 0).toLocaleString()}`, 'purple'],
+                    ].map(([label, value, tone]) => (
+                      <div className="mini-card" key={label}>
+                        <div className="mini-card-title">{label}</div>
+                        <span className={`stat-value ${tone}`}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="incident-dashboard-grid">
+                    <div className="glass-card incident-chart-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><Activity size={16} /> Incident Trend</span></div>
+                      {renderSvgLineChart(incidentCommandData.charts?.trend || [], 'label', 'value')}
+                    </div>
+                    <div className="glass-card incident-chart-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><AlertTriangle size={16} /> Priority Distribution</span></div>
+                      {renderSvgBarChart(incidentCommandData.charts?.priority || [], 'label', 'value')}
+                    </div>
+                    <div className="glass-card incident-chart-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><Database size={16} /> Root Causes</span></div>
+                      {renderSvgBarChart(incidentCommandData.charts?.root_causes || [], 'label', 'value')}
+                    </div>
+                    <div className="glass-card incident-chart-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><Server size={16} /> Top Applications</span></div>
+                      {renderSvgBarChart(incidentCommandData.charts?.top_apps || [], 'label', 'value')}
+                    </div>
+                  </div>
+
+                  <div className="incident-split-grid">
+                    <div className="glass-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><Sparkles size={16} /> AI Insights</span></div>
+                      <div className="incident-insight-list">
+                        {(incidentCommandData.insights || []).map((item, idx) => <div className="incident-insight" key={idx}>{item}</div>)}
+                      </div>
+                      <div className="incident-domain-strip">
+                        {incidentCommandData.source && <span>source: <strong>{incidentCommandData.source}</strong></span>}
+                        {Object.entries(incidentCommandData.dataset || {}).map(([key, value]) => (
+                          <span key={key}>{key.replace('_', ' ')}: <strong>{Number(value).toLocaleString()}</strong></span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="glass-card">
+                      <div className="glass-card-header"><span className="glass-card-title"><ShieldAlert size={16} /> Critical Queue</span></div>
+                      <div className="incident-critical-list">
+                        {(incidentCommandData.recent_critical || []).slice(0, 6).map(row => (
+                          <div className="incident-critical-row" key={row.INCIDENT_ID}>
+                            <div><strong>{row.INCIDENT_ID}</strong><span>{row.TITLE}</span></div>
+                            <span className={`status-badge ${row.SEVERITY === 'Critical' ? 'mock' : ''}`}>{row.SEVERITY}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glass-card incident-query-card">
+                    <div className="glass-card-header">
+                      <span className="glass-card-title"><MessageSquare size={16} /> Ask Incident Data</span>
+                      <div className="status-badge">{aiConfig.processing_mode?.toUpperCase() || 'NATIVE'} Mode</div>
+                    </div>
+                    <div className="incident-prompt-row">
+                      <input
+                        className="form-input"
+                        value={incidentQuestion}
+                        onChange={(e) => setIncidentQuestion(e.target.value)}
+                        placeholder="Ask about critical incidents, SLA breaches, root causes, trends, cost, or change-linked incidents"
+                      />
+                      <button className="btn btn-primary btn-small" onClick={() => runIncidentCommandQuestion()} disabled={incidentQueryLoading || !incidentQuestion.trim()}>
+                        <Play size={13} /> {incidentQueryLoading ? 'Running...' : 'Run'}
+                      </button>
+                    </div>
+                    <div className="incident-sample-prompts">
+                      {[
+                        'Show critical incidents this week',
+                        'Which application has the highest incident count?',
+                        'Which engineer resolved the most incidents?',
+                        'Which applications violate SLA the most?',
+                        'Which change requests caused incidents?',
+                        'Which applications have the highest operational cost?',
+                        'Show incident trend over the last six months'
+                      ].map(sample => (
+                        <button key={sample} type="button" onClick={() => { setIncidentQuestion(sample); runIncidentCommandQuestion(sample); }}>{sample}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {incidentQueryResult?.mode === 'compare' && (
+                    <div className="incident-compare-grid">
+                      {[
+                        ['Native', incidentQueryResult.native],
+                        ['AI', incidentQueryResult.ai]
+                      ].map(([label, pipeline]) => (
+                        <div className="glass-card compare-result-card" key={label}>
+                          <div className="glass-card-header">
+                            <span className="glass-card-title">{label} Pipeline</span>
+                            <span className="status-badge">{pipeline?.execution_time_ms} ms</span>
+                          </div>
+                          <pre className="code-block compare-code-block">{pipeline?.generated_sql}</pre>
+                          <p className="text-secondary">{pipeline?.explanation}</p>
+                          {label === 'AI' && (
+                            <div className="incident-insight-list compact">
+                              {(pipeline?.business_insights || []).map((item, idx) => <div className="incident-insight" key={idx}>{item}</div>)}
+                            </div>
+                          )}
+                          <div className="table-container sql-result-table">
+                            <table className="custom-table">
+                              <thead><tr>{Object.keys((pipeline?.result_preview || [])[0] || {}).slice(0, 5).map(col => <th key={col}>{col}</th>)}</tr></thead>
+                              <tbody>{(pipeline?.result_preview || []).slice(0, 5).map((row, idx) => (
+                                <tr key={idx}>{Object.keys(row).slice(0, 5).map(col => <td key={col}>{String(row[col] ?? '')}</td>)}</tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="glass-card incident-compare-summary">
+                        <strong>Why AI Helps</strong>
+                        <span>{incidentQueryResult.comparison_summary}</span>
+                        <span className="status-badge">Recommended: {incidentQueryResult.recommended}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {incidentQueryResult && incidentQueryResult.mode !== 'compare' && (
+                    <div className="incident-query-results">
+                      <div className="glass-card">
+                        <div className="glass-card-header">
+                          <span className="glass-card-title"><Terminal size={16} /> Generated SQL</span>
+                          <button className="btn btn-secondary btn-small" onClick={() => handleCopy(incidentQueryResult.generated_sql)}>
+                            {copiedQuery === incidentQueryResult.generated_sql ? <Check size={12} /> : <Copy size={12} />} Copy
+                          </button>
+                        </div>
+                        <pre className="code-block">{incidentQueryResult.generated_sql || incidentQueryResult.error}</pre>
+                        <p className="text-secondary">{incidentQueryResult.explanation}</p>
+                        {incidentQueryResult.business_insights?.length > 0 && (
+                          <div className="incident-insight-list compact">
+                            {incidentQueryResult.business_insights.map((item, idx) => <div className="incident-insight" key={idx}>{item}</div>)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="glass-card">
+                        <div className="glass-card-header">
+                          <span className="glass-card-title"><Activity size={16} /> Result View</span>
+                          <span className="status-badge">{incidentQueryResult.rows_returned || 0} rows</span>
+                        </div>
+                        {incidentQueryResult.chart?.type === 'bar' && renderSvgBarChart(incidentQueryResult.result_preview || [], incidentQueryResult.chart.x, incidentQueryResult.chart.y)}
+                        {incidentQueryResult.chart?.type === 'line' && renderSvgLineChart(incidentQueryResult.result_preview || [], incidentQueryResult.chart.x, incidentQueryResult.chart.y)}
+                        {(!incidentQueryResult.chart || incidentQueryResult.chart.type === 'table') && (
+                          <div className="table-container sql-result-table">
+                            <table className="custom-table">
+                              <thead><tr>{Object.keys((incidentQueryResult.result_preview || [])[0] || {}).slice(0, 6).map(col => <th key={col}>{col}</th>)}</tr></thead>
+                              <tbody>{(incidentQueryResult.result_preview || []).slice(0, 8).map((row, idx) => (
+                                <tr key={idx}>{Object.keys(row).slice(0, 6).map(col => <td key={col}>{String(row[col] ?? '')}</td>)}</tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 

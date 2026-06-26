@@ -13,6 +13,7 @@ from routes_lineage import router as lineage_router
 from routes_quality import router as quality_router
 from routes_rag import router as rag_router
 from routes_incidents import router as incidents_router
+from routes_incident_command import router as incident_command_router
 from routes_table_apps import router as table_apps_router
 from routes_ai import router as ai_router
 
@@ -26,6 +27,7 @@ app.include_router(lineage_router)
 app.include_router(quality_router)
 app.include_router(rag_router)
 app.include_router(incidents_router)
+app.include_router(incident_command_router)
 app.include_router(table_apps_router)
 
 
