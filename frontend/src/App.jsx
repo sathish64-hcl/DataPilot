@@ -1158,6 +1158,45 @@ function App() {
   };
 
   // SQL Optimizer
+  const safeJsonResponse = async (response) => {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: text };
+    }
+  };
+
+  const normalizeList = (value, fallback = []) => {
+    if (Array.isArray(value)) return value.map(item => String(item));
+    if (typeof value === 'string' && value.trim()) return [value.trim()];
+    return fallback;
+  };
+
+  const normalizeSqlOptimization = (payload = {}) => ({
+    explanation: String(payload.explanation || payload.detail || payload.error || 'Optimization analysis completed without a narrative response.'),
+    inefficiencies: normalizeList(payload.inefficiencies, ['No inefficiency details were returned.']),
+    recommendations: normalizeList(payload.recommendations, ['No recommendation details were returned.']),
+    optimized_sql: String(payload.optimized_sql || payload.sql || sqlQuery),
+    ai_metadata: payload.ai_metadata || null,
+  });
+
+  const normalizeSqlCostAdvisor = (payload = {}, ok = true) => {
+    if (!ok || payload.success === false) {
+      return { success: false, error: String(payload.detail || payload.error || 'Cost advisor failed.') };
+    }
+    return {
+      ...payload,
+      success: true,
+      findings: normalizeList(payload.findings, ['No cost findings were returned.']),
+      alternatives: normalizeList(payload.alternatives, ['No cheaper alternatives were returned.']),
+      assumptions: normalizeList(payload.assumptions, []),
+      optimized_sql: String(payload.optimized_sql || sqlQuery),
+      estimated_reduction_pct: Number(payload.estimated_reduction_pct || 0),
+    };
+  };
+
   const handleAnalyzeAndOptimizeSql = async () => {
     if (!sqlQuery.trim()) return;
     setAnalyzingCost(true);
@@ -1177,13 +1216,16 @@ function App() {
           body: JSON.stringify({ sql: sqlQuery })
         })
       ]);
-      const [costData, optimizeData] = await Promise.all([costRes.json(), optimizeRes.json()]);
-      setSqlCostAdvisor(costRes.ok ? costData : { success: false, error: costData.detail || costData.error || 'Cost advisor failed.' });
-      setSqlOptimization(optimizeRes.ok ? optimizeData : { explanation: optimizeData.detail || optimizeData.error || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
+      const [costData, optimizeData] = await Promise.all([safeJsonResponse(costRes), safeJsonResponse(optimizeRes)]);
+      setSqlCostAdvisor(normalizeSqlCostAdvisor(costData, costRes.ok));
+      setSqlOptimization(normalizeSqlOptimization(optimizeRes.ok ? optimizeData : {
+        explanation: optimizeData.detail || optimizeData.error || 'Optimization failed.',
+        optimized_sql: sqlQuery,
+      }));
       refreshAiUsage();
     } catch (err) {
       setSqlCostAdvisor({ success: false, error: err.message || 'Cost advisor failed.' });
-      setSqlOptimization({ explanation: err.message || 'Optimization failed.', inefficiencies: [], recommendations: [], optimized_sql: sqlQuery });
+      setSqlOptimization(normalizeSqlOptimization({ explanation: err.message || 'Optimization failed.', optimized_sql: sqlQuery }));
     }
     setAnalyzingCost(false);
     setOptimizing(false);
@@ -4521,7 +4563,7 @@ function App() {
                       <div>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-red)', marginBottom: '6px' }}>INEFFICIENCIES DETECTED:</div>
                         <ul style={{ paddingLeft: '16px', fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {sqlOptimization.inefficiencies.map((item, idx) => (
+                          {(Array.isArray(sqlOptimization.inefficiencies) ? sqlOptimization.inefficiencies : []).map((item, idx) => (
                             <li key={idx} style={{ listStyleType: 'square' }}>{item}</li>
                           ))}
                         </ul>
@@ -4530,7 +4572,7 @@ function App() {
                       <div>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-green)', marginBottom: '6px' }}>OPTIMIZATION RECOMMENDATIONS:</div>
                         <ul style={{ paddingLeft: '16px', fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {sqlOptimization.recommendations.map((item, idx) => (
+                          {(Array.isArray(sqlOptimization.recommendations) ? sqlOptimization.recommendations : []).map((item, idx) => (
                             <li key={idx} style={{ listStyleType: 'disc' }}>{item}</li>
                           ))}
                         </ul>
@@ -4601,11 +4643,11 @@ function App() {
                       <div className="workbench-grid">
                         <div className="mini-card">
                           <div className="mini-card-title">Findings</div>
-                          <ul className="advisor-list">{sqlCostAdvisor.findings?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                          <ul className="advisor-list">{(Array.isArray(sqlCostAdvisor.findings) ? sqlCostAdvisor.findings : []).map((item, idx) => <li key={idx}>{item}</li>)}</ul>
                         </div>
                         <div className="mini-card">
                           <div className="mini-card-title">Cheaper Alternatives</div>
-                          <ul className="advisor-list">{sqlCostAdvisor.alternatives?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                          <ul className="advisor-list">{(Array.isArray(sqlCostAdvisor.alternatives) ? sqlCostAdvisor.alternatives : []).map((item, idx) => <li key={idx}>{item}</li>)}</ul>
                         </div>
                       </div>
 
@@ -4623,7 +4665,7 @@ function App() {
 
                       <div className="mini-card">
                         <div className="mini-card-title">Assumptions</div>
-                        <ul className="advisor-list">{sqlCostAdvisor.assumptions?.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+                        <ul className="advisor-list">{(Array.isArray(sqlCostAdvisor.assumptions) ? sqlCostAdvisor.assumptions : []).map((item, idx) => <li key={idx}>{item}</li>)}</ul>
                       </div>
                     </div>
                   )}
