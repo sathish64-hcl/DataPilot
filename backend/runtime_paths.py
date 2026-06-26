@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import shutil
 import sys
 
 
@@ -20,10 +21,28 @@ def data_dir() -> Path:
     if override:
         target = Path(override)
     else:
-        target = app_root() / "data" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+        if os.name == "nt":
+            base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+            target = Path(base) / "DataPilotStudio"
+        else:
+            base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+            target = Path(base) / "datapilotstudio"
     target.mkdir(parents=True, exist_ok=True)
     return target
 
 
 def data_path(name: str) -> Path:
-    return data_dir() / name
+    target = data_dir() / name
+    if not target.exists():
+        legacy_candidates = [
+            Path(__file__).resolve().parent / name,
+            app_root() / "data" / name,
+        ]
+        for legacy in legacy_candidates:
+            if legacy != target and legacy.exists():
+                try:
+                    shutil.copy2(legacy, target)
+                except Exception:
+                    pass
+                break
+    return target

@@ -595,9 +595,9 @@ function App() {
       name: 'Incident Command Center',
       mode: 'Hybrid',
       llmOps: ['incident_investigation', 'nl_to_sql_compare'],
-      nativeWork: 'Deterministic incident data pack, KPI dashboard, NL keyword routing, charts, and SQL preview.',
+      nativeWork: 'Snowflake-backed incident KPI dashboard, NL keyword routing, charts, and SQL preview.',
       llmWork: 'Executive-style summaries, risk interpretation, recommendations, and Native-vs-AI comparison narrative.',
-      note: 'Demo app for enterprise incident management and platform customization.'
+      note: 'Reads loaded enterprise incident management tables from Snowflake.'
     },
     {
       id: 'queryLog',
@@ -681,8 +681,6 @@ function App() {
   const [investigatingIncident, setInvestigatingIncident] = useState(false);
   const [incidentCommandData, setIncidentCommandData] = useState(null);
   const [incidentCommandLoading, setIncidentCommandLoading] = useState(false);
-  const [incidentLoadStatus, setIncidentLoadStatus] = useState('');
-  const [incidentLoadingToSnowflake, setIncidentLoadingToSnowflake] = useState(false);
   const [incidentQuestion, setIncidentQuestion] = useState('Which application has the highest incident count?');
   const [incidentQueryResult, setIncidentQueryResult] = useState(null);
   const [incidentQueryLoading, setIncidentQueryLoading] = useState(false);
@@ -1589,25 +1587,6 @@ function App() {
     setIncidentCommandLoading(false);
   }
 
-  async function loadIncidentDemoToSnowflake() {
-    setIncidentLoadingToSnowflake(true);
-    setIncidentLoadStatus('Loading enterprise incident data into Snowflake...');
-    try {
-      const res = await fetch(`${API_BASE}/api/incident-command/load-demo-data`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok || data.success === false) {
-        setIncidentLoadStatus(`Load failed: ${data.detail || data.error || 'Snowflake load failed.'}`);
-      } else {
-        const tableText = Object.entries(data.tables || {}).map(([table, count]) => `${table}: ${Number(count).toLocaleString()}`).join(', ');
-        setIncidentLoadStatus(`Loaded to ${data.database}.${data.schema}. ${tableText}`);
-        await fetchIncidentCommandDashboard();
-      }
-    } catch (err) {
-      setIncidentLoadStatus(`Load failed: ${err.message || 'Snowflake load failed.'}`);
-    }
-    setIncidentLoadingToSnowflake(false);
-  }
-
   async function runIncidentCommandQuestion(question = incidentQuestion) {
     const prompt = question.trim();
     if (!prompt) return;
@@ -2168,7 +2147,7 @@ function App() {
           'Use this app to show Data Pilot as a domain-configurable enterprise copilot, not only a Snowflake utility.',
           'Switch Execution Mode to Compare before asking a question to show Native speed versus AI business context.',
           'Use the sample prompts for critical incidents, SLA breaches, change-linked incidents, and cost impact.',
-          'The demo dataset is deterministic, so the dashboard stays stable during presentations.'
+          'The dashboard reads from the loaded Snowflake tables in KAGGLE.INCIDENT_MGMT.'
         ]
       };
     }
@@ -6272,15 +6251,11 @@ function App() {
             <div className="panel-body incident-command-page">
               <div className="incident-command-hero">
                 <div>
-                  <div className="status-badge">Enterprise Incident Management Demo</div>
-                  <h2>Operational intelligence for 10,000 synthetic incidents</h2>
-                  <p>Demonstrates Data Pilot as a configurable enterprise copilot: apps, employees, changes, incidents, SLA, business cost, root cause, and comparison mode.</p>
-                  {incidentLoadStatus && <p className="incident-load-status">{incidentLoadStatus}</p>}
+                  <div className="status-badge">Snowflake Incident Management</div>
+                  <h2>Operational intelligence from KAGGLE.INCIDENT_MGMT</h2>
+                  <p>Reads the loaded Snowflake incident tables for apps, employees, changes, incidents, SLA, business cost, root cause, and comparison mode.</p>
                 </div>
                 <div className="incident-hero-actions">
-                  <button className="btn btn-secondary btn-small" onClick={loadIncidentDemoToSnowflake} disabled={incidentLoadingToSnowflake}>
-                    <Database size={13} /> {incidentLoadingToSnowflake ? 'Loading...' : 'Load to Snowflake'}
-                  </button>
                   <button className="btn btn-secondary btn-small" onClick={fetchIncidentCommandDashboard} disabled={incidentCommandLoading}>
                     <RefreshCw size={13} /> {incidentCommandLoading ? 'Refreshing...' : 'Refresh Dashboard'}
                   </button>
@@ -6288,7 +6263,7 @@ function App() {
               </div>
 
               {incidentCommandData?.error && <div className="empty-state">{incidentCommandData.error}</div>}
-              {!incidentCommandData && !incidentCommandLoading && <div className="empty-state">Load the Incident Command Center to generate the enterprise incident dashboard.</div>}
+              {!incidentCommandData && !incidentCommandLoading && <div className="empty-state">Refresh the Incident Command Center to read the Snowflake dashboard.</div>}
 
               {incidentCommandData && !incidentCommandData.error && (
                 <>

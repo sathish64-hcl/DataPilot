@@ -453,18 +453,6 @@ async def incident_dashboard():
     return _dashboard_payload()
 
 
-@router.post("/api/incident-command/load-demo-data")
-async def load_incident_demo_data():
-    counts = _load_demo_data_to_snowflake()
-    return {
-        "success": True,
-        "database": INCIDENT_DATABASE,
-        "schema": INCIDENT_SCHEMA,
-        "tables": counts,
-        "message": f"Loaded enterprise incident demo data into {INCIDENT_DATABASE}.{INCIDENT_SCHEMA}.",
-    }
-
-
 @router.get("/api/incident-command/status")
 async def incident_command_status():
     counts = _verify_snowflake_tables()
