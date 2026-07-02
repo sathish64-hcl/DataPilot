@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from functools import lru_cache
+import json
 import os
 import random
 import time
@@ -448,6 +449,104 @@ def _ai_answer(question: str):
     return native
 
 
+def _incident_schema_manifest():
+    return {
+        "APPLICATIONS": [
+            "APP_ID", "APP_NAME", "BUSINESS_UNIT", "BUSINESS_OWNER", "OWNER_TEAM",
+            "ENVIRONMENT", "CRITICALITY", "CREATED_DATE",
+        ],
+        "EMPLOYEES": [
+            "EMPLOYEE_ID", "EMPLOYEE_NAME", "TEAM", "MANAGER", "EMAIL",
+            "LOCATION", "EXPERIENCE_YEARS", "PRIMARY_SKILL",
+        ],
+        "CHANGE_REQUESTS": [
+            "CHANGE_ID", "APP_ID", "CHANGE_DATE", "CHANGE_TYPE", "STATUS",
+            "IMPLEMENTED_BY", "RISK_LEVEL", "DESCRIPTION",
+        ],
+        "INCIDENTS": [
+            "INCIDENT_ID", "TITLE", "DESCRIPTION", "CATEGORY", "SUBCATEGORY", "PRIORITY",
+            "SEVERITY", "STATUS", "CREATED_DATE", "UPDATED_DATE", "RESOLVED_DATE",
+            "APP_ID", "APP_NAME", "EMPLOYEE_ID", "EMPLOYEE_NAME", "OWNER_TEAM",
+            "CHANGE_ID", "ROOT_CAUSE", "RESOLUTION", "BUSINESS_UNIT", "REGION",
+            "SLA_TARGET", "ACTUAL_RESOLUTION", "SLA_MET", "USERS_AFFECTED", "COST_IMPACT",
+        ],
+    }
+
+
+def _compact_rows(rows, limit=6):
+    compact = []
+    for row in (rows or [])[:limit]:
+        compact.append({
+            key: value for key, value in row.items()
+            if key in {
+                "APP_NAME", "INCIDENT_COUNT", "SLA_BREACHES", "BREACH_RATE", "COST_IMPACT",
+                "ROOT_CAUSE", "CHANGE_ID", "STATUS", "SEVERITY", "CREATED_DATE", "MONTH",
+                "EMPLOYEE_NAME", "RESOLVED_COUNT",
+            }
+        })
+    return compact
+
+
+def _spend_aware_plan(question: str, mode: str, native_result: dict):
+    manifest = _incident_schema_manifest()
+    dataset_shape = {
+        "database": INCIDENT_DATABASE,
+        "schema": INCIDENT_SCHEMA,
+        "tables": {
+            "APPLICATIONS": "120 application records",
+            "EMPLOYEES": "259 support and engineering records",
+            "CHANGE_REQUESTS": "1,800 change records",
+            "INCIDENTS": "10,000 incident records",
+        },
+    }
+    naive_prompt = json.dumps({
+        "system": "You are an enterprise incident copilot. Analyze all schemas, records, samples, and query results.",
+        "question": question,
+        "dataset_shape": dataset_shape,
+        "schema": manifest,
+        "sample_policy": "Send broad schema, recent incidents, applications, employee context, change records, and dashboard summaries.",
+        "full_result_preview": native_result.get("result_preview", [])[:100],
+        "instruction": "Generate SQL, root-cause narrative, executive summary, risk analysis, and remediation plan.",
+    }, default=str)
+    optimized_prompt = json.dumps({
+        "system": "You are an enterprise incident copilot. Use native SQL facts first; only narrate business impact and next actions.",
+        "question": question,
+        "selected_sql": native_result.get("generated_sql"),
+        "selected_result_rows": _compact_rows(native_result.get("result_preview", [])),
+        "selected_columns": list((_compact_rows(native_result.get("result_preview", []), 1)[0] or {}).keys()) if native_result.get("result_preview") else [],
+        "native_explanation": native_result.get("explanation"),
+    }, default=str)
+    naive_tokens = ai.estimate_tokens(naive_prompt)
+    optimized_tokens = ai.estimate_tokens(optimized_prompt)
+    decision = "Native only: SQL answered the operational metric without an LLM."
+    route = "native"
+    if mode in ("ai", "compare"):
+        decision = "Hybrid: native SQL facts + compact AI executive narrative."
+        route = "native-first-compact-ai"
+    trace = [
+        "Classified the question as incident analytics over SLA, cost, change, root cause, or trend data.",
+        "Ran deterministic Snowflake SQL first to collect the answer-shaped facts.",
+        "Skipped broad schema and unrelated employee/application/change context.",
+        "Kept only the generated SQL, compact result rows, selected columns, and native explanation.",
+        "Reserved LLM usage for narrative reasoning instead of raw database retrieval.",
+    ]
+    event = ai.record_spend_aware_decision({
+        "feature": "Incident Command Center",
+        "question": question,
+        "decision": decision,
+        "route": route,
+        "naive_prompt_tokens": naive_tokens,
+        "optimized_prompt_tokens": optimized_tokens,
+        "trace": trace,
+    })
+    return {
+        **event,
+        "naive_context": "Full incident schema, broad table samples, dashboard summaries, and up to 100 result rows.",
+        "optimized_context": "Generated SQL, answer-shaped result rows, selected columns, and concise native explanation.",
+        "quality_guardrail": "The LLM receives facts produced by SQL, reducing hallucination risk while preserving executive reasoning.",
+    }
+
+
 @router.get("/api/incident-command/dashboard")
 async def incident_dashboard():
     return _dashboard_payload()
@@ -469,6 +568,7 @@ async def incident_query(req: IncidentQuestion):
     mode = (req.mode or "native").lower()
     question = req.question.strip() or "Show incident trend over the last six months"
     native = _native_answer(question)
+    spend_aware = _spend_aware_plan(question, mode, native)
     if mode == "compare":
         ai_result = _ai_answer(question)
         return {
@@ -476,12 +576,15 @@ async def incident_query(req: IncidentQuestion):
             "prompt": question,
             "native": native,
             "ai": ai_result,
+            "spend_aware": spend_aware,
             "comparison_summary": "Native execution is fast and deterministic. AI adds stronger business framing, recommendations, and demo-ready explanation around the same result.",
             "recommended": "AI" if len(ai_result.get("business_insights", [])) else "Native",
         }
     if mode == "ai":
         result = _ai_answer(question)
         result["mode"] = "ai"
+        result["spend_aware"] = spend_aware
         return result
     native["mode"] = "native"
+    native["spend_aware"] = spend_aware
     return native

@@ -620,6 +620,52 @@ function App() {
       return acc;
     }, { prompt_count: 0, total_tokens: 0, estimated_cost: 0 });
   };
+  const formatTokenCount = (value) => Number(value || 0).toLocaleString();
+  const formatSmallUsd = (value) => `$${Number(value || 0).toFixed(4)}`;
+  const renderSpendAwarePanel = (spendAware) => {
+    if (!spendAware) return null;
+    return (
+      <div className="glass-card spend-aware-card">
+        <div className="glass-card-header">
+          <span className="glass-card-title"><DollarSign size={16} /> Spend-Aware AI Engine</span>
+          <span className="status-badge">{spendAware.route || 'native-first'}</span>
+        </div>
+        <div className="spend-aware-hero">
+          <div>
+            <span>Naive Prompt</span>
+            <strong>{formatTokenCount(spendAware.naive_prompt_tokens)}</strong>
+          </div>
+          <div>
+            <span>Optimized Prompt</span>
+            <strong>{formatTokenCount(spendAware.optimized_prompt_tokens)}</strong>
+          </div>
+          <div>
+            <span>Tokens Avoided</span>
+            <strong className="green">{formatTokenCount(spendAware.tokens_saved)}</strong>
+          </div>
+          <div>
+            <span>Reduction</span>
+            <strong>{Number(spendAware.reduction_pct || 0).toFixed(1)}%</strong>
+          </div>
+          <div>
+            <span>Cost Avoided</span>
+            <strong>{formatSmallUsd(spendAware.cost_avoided)}</strong>
+          </div>
+        </div>
+        <div className="spend-aware-decision">
+          <strong>{spendAware.decision}</strong>
+          <span>{spendAware.quality_guardrail || 'Native facts are gathered first; AI is reserved for reasoning and language.'}</span>
+        </div>
+        <div className="spend-aware-context-grid">
+          <div><span>Naive Context</span><p>{spendAware.naive_context}</p></div>
+          <div><span>Optimized Context</span><p>{spendAware.optimized_context}</p></div>
+        </div>
+        <div className="spend-aware-trace">
+          {(spendAware.trace || []).map((item, idx) => <div key={idx}><span>{idx + 1}</span>{item}</div>)}
+        </div>
+      </div>
+    );
+  };
   const currentExecutionApp = appExecutionCatalog.find(app => app.id === activeTab);
 
   const defaultWorkbenchScope = { database: '', schema: '', type: 'TABLE', table: '', column: '' };
@@ -917,7 +963,10 @@ function App() {
               text: data.reply,
               sql: data.sql,
               visualization: data.visualization,
-              aiMetadata: data.ai_metadata
+              aiMetadata: data.ai_metadata,
+              semanticResolver: data.semantic_resolver,
+              sqlValidation: data.sql_validation,
+              explainabilityTimeline: data.explainability_timeline
             };
         return updated;
       });
@@ -1600,6 +1649,9 @@ function App() {
       });
       const data = await res.json();
       setIncidentQueryResult(res.ok ? data : { success: false, error: data.detail || data.error || 'Incident query failed.' });
+      if (res.ok) {
+        await refreshAiUsage();
+      }
     } catch (err) {
       setIncidentQueryResult({ success: false, error: err.message || 'Incident query failed.' });
     }
@@ -2523,6 +2575,7 @@ function App() {
           {isAi && <div><span>Tokens</span><strong>{pipeline.tokens?.total || 0}</strong></div>}
           {isAi && <div><span>API Cost</span><strong>${Number(pipeline.estimated_api_cost || 0).toFixed(4)}</strong></div>}
         </div>
+        {renderExplainabilityTimeline(pipeline.explainability_timeline)}
         <div className="compare-section">
           <div className="compare-section-title">
             <span>Generated SQL</span>
@@ -2535,6 +2588,7 @@ function App() {
           </div>
           <pre className="code-block compare-code-block">{pipeline.generated_sql || pipeline.error || 'No SQL generated.'}</pre>
         </div>
+        {renderSqlValidationFirewall(pipeline.sql_validation)}
         <div className="compare-section">
           <div className="compare-section-title"><span>Explanation</span></div>
           <p className="compare-text">{pipeline.explanation || 'No explanation returned.'}</p>
@@ -2578,6 +2632,7 @@ function App() {
             Recommended: {summary.recommended || 'Review'}
           </div>
         </div>
+        {renderSemanticResolver(comparison.semantic_resolver)}
         <div className="compare-grid">
           {renderComparePipeline(comparison.native, 'native')}
           {renderComparePipeline(comparison.ai, 'ai')}
@@ -2610,6 +2665,110 @@ function App() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSemanticResolver = (resolver) => {
+    const matches = resolver?.top_matches || [];
+    if (!resolver) return null;
+    return (
+      <div className="semantic-resolver-card">
+        <div className="semantic-resolver-header">
+          <div>
+            <span className="compare-pipeline-kicker">Semantic Table Resolver</span>
+            <strong>{resolver.best_table || matches[0]?.table || 'No table match yet'}</strong>
+          </div>
+          <span className="status-badge">{resolver.confidence || matches[0]?.confidence} Confidence</span>
+        </div>
+        <div className="semantic-concept-row">
+          {(resolver.concepts?.length ? resolver.concepts : resolver.query_tokens?.slice(0, 6) || ['no schema match']).map(concept => <span key={concept}>{concept}</span>)}
+        </div>
+        {matches.length ? (
+          <div className="semantic-match-grid">
+            {matches.slice(0, 3).map(match => (
+              <div key={match.table} className="semantic-match">
+                <div><strong>{match.table}</strong><span>Score {match.score} | {match.confidence}</span></div>
+                <p>{(match.matched_columns || []).slice(0, 6).join(', ') || 'Matched by table name'}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="semantic-empty">
+            No strong table match was found from the current DB/schema metadata. Select a more specific table/view or refresh the schema context.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSqlValidationFirewall = (validation) => {
+    if (!validation || Object.keys(validation).length === 0) return null;
+    const status = validation.status || (validation.blocked ? 'blocked' : 'passed');
+    const details = [
+      ...(validation.missing_tables || []).map(item => `Missing table: ${item}`),
+      ...(validation.missing_columns || []).map(item => `Missing field: ${item}`),
+      ...(validation.warnings || []),
+    ];
+    return (
+      <div className={`sql-firewall-card ${status}`}>
+        <div className="sql-firewall-header">
+          <span>SQL Validation Firewall</span>
+          <strong>{status}</strong>
+        </div>
+        <div className="sql-firewall-grid">
+          <div><span>Tables Checked</span><strong>{validation.checked_tables?.length || 0}</strong></div>
+          <div><span>Fields Checked</span><strong>{validation.checked_columns?.length || 0}</strong></div>
+          <div><span>Blocked</span><strong>{validation.blocked ? 'Yes' : 'No'}</strong></div>
+        </div>
+        {details.length > 0 && (
+          <div className="sql-firewall-details">
+            {details.slice(0, 5).map((item, idx) => <span key={idx}>{item}</span>)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderExplainabilityTimeline = (timeline) => {
+    const steps = timeline?.steps || [];
+    if (!steps.length) return null;
+    const statusLabel = timeline.status || 'review';
+    return (
+      <div className={`explainability-timeline ${statusLabel}`}>
+        <div className="explainability-timeline-header">
+          <div>
+            <span className="compare-pipeline-kicker">Explainability Timeline</span>
+            <strong>{timeline.label || 'Decision Trace'}</strong>
+          </div>
+          <span className={`compare-status ${statusLabel === 'passed' ? 'success' : statusLabel === 'blocked' ? 'error' : ''}`}>
+            {statusLabel}
+          </span>
+        </div>
+        <div className="explainability-step-list">
+          {steps.map((step, idx) => (
+            <div key={`${step.id || step.label}-${idx}`} className={`explainability-step ${step.status || 'info'}`}>
+              <div className="explainability-marker">{idx + 1}</div>
+              <div className="explainability-step-body">
+                <div className="explainability-step-title">
+                  <strong>{step.label}</strong>
+                  <span>{step.status || 'info'}</span>
+                </div>
+                <p>{step.detail}</p>
+                {step.metrics && Object.keys(step.metrics).some(key => step.metrics[key] !== null && step.metrics[key] !== undefined && step.metrics[key] !== '') && (
+                  <div className="explainability-metrics">
+                    {Object.entries(step.metrics)
+                      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+                      .slice(0, 4)
+                      .map(([key, value]) => (
+                        <span key={key}>{key.replace(/_/g, ' ')}: {String(value)}</span>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -4228,6 +4387,10 @@ function App() {
                           <div className="code-block">{msg.sql}</div>
                         </div>
                       )}
+
+                      {renderSemanticResolver(msg.semanticResolver)}
+                      {renderSqlValidationFirewall(msg.sqlValidation)}
+                      {renderExplainabilityTimeline(msg.explainabilityTimeline)}
 
                       {msg.visualization && msg.visualization.type !== 'none' && (
                         <div className="glass-card" style={{ marginTop: '12px', padding: '14px' }}>
@@ -5972,6 +6135,76 @@ function App() {
                 </div>
               </div>
 
+              <div className="glass-card spend-aware-card execution-spend-aware-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><DollarSign size={16} /> Spend-Aware AI Engine</span>
+                  <span className="status-badge">{aiConfig.usage?.spend_aware?.decision_count || 0} decisions</span>
+                </div>
+                <div className="spend-aware-hero">
+                  <div><span>Naive Tokens</span><strong>{formatTokenCount(aiConfig.usage?.spend_aware?.naive_prompt_tokens)}</strong></div>
+                  <div><span>Optimized Tokens</span><strong>{formatTokenCount(aiConfig.usage?.spend_aware?.optimized_prompt_tokens)}</strong></div>
+                  <div><span>Tokens Avoided</span><strong className="green">{formatTokenCount(aiConfig.usage?.spend_aware?.tokens_saved)}</strong></div>
+                  <div><span>Avg Reduction</span><strong>{Number(aiConfig.usage?.spend_aware?.avg_reduction_pct || 0).toFixed(1)}%</strong></div>
+                  <div><span>Cost Avoided</span><strong>{formatSmallUsd(aiConfig.usage?.spend_aware?.cost_avoided)}</strong></div>
+                </div>
+                <div className="spend-aware-decision">
+                  <strong>Internal token governance without external tools.</strong>
+                  <span>DataPilot estimates naive context, uses native SQL first, trims the LLM prompt to the facts that matter, and records avoided tokens separately from actual provider usage.</span>
+                </div>
+                {aiConfig.usage?.spend_aware?.events?.length ? (
+                  <div className="spend-aware-event-list">
+                    {[...(aiConfig.usage.spend_aware.events || [])].slice(-5).reverse().map((event, idx) => (
+                      <div className="spend-aware-event" key={`${event.timestamp}-${idx}`}>
+                        <div>
+                          <strong>{event.feature}</strong>
+                          <span>{event.question}</span>
+                        </div>
+                        <span className="status-badge">{formatTokenCount(event.tokens_saved)} saved</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">Run an Incident Command question to populate Spend-Aware decisions.</div>
+                )}
+              </div>
+
+              <div className="execution-governance-grid">
+                <div className="glass-card execution-governance-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><Copy size={16} /> Prompt Reuse Cache</span>
+                    <span className="status-badge">{aiConfig.usage?.prompt_cache?.entries || 0} entries</span>
+                  </div>
+                  <div className="execution-summary-grid compact">
+                    <div><span>Cache Hits</span><strong>{formatTokenCount(aiConfig.usage?.prompt_cache?.hits)}</strong></div>
+                    <div><span>Misses</span><strong>{formatTokenCount(aiConfig.usage?.prompt_cache?.misses)}</strong></div>
+                    <div><span>Tokens Saved</span><strong>{formatTokenCount(aiConfig.usage?.prompt_cache?.tokens_saved)}</strong></div>
+                    <div><span>Cost Avoided</span><strong>{formatSmallUsd(aiConfig.usage?.prompt_cache?.cost_avoided)}</strong></div>
+                  </div>
+                  <p className="execution-note">
+                    Last lookup: {aiConfig.usage?.prompt_cache?.last_lookup?.status || 'not run'}
+                    {aiConfig.usage?.prompt_cache?.last_lookup?.scope ? ` | ${aiConfig.usage.prompt_cache.last_lookup.scope}` : ''}
+                    {aiConfig.usage?.prompt_cache?.last_lookup?.key ? ` | ${aiConfig.usage.prompt_cache.last_lookup.key}` : ''}
+                  </p>
+                  <p className="execution-note">Exact same operation, provider, model, question, database/schema, and resolved table scope can reuse the stored response without spending provider tokens.</p>
+                </div>
+
+                <div className={`glass-card execution-governance-card budget-${aiConfig.usage?.token_budget?.status || 'ok'}`}>
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><ShieldCheck size={16} /> Token Budget Guardrails</span>
+                    <span className="status-badge">{aiConfig.usage?.token_budget?.status || 'ok'}</span>
+                  </div>
+                  <div className="execution-summary-grid compact">
+                    <div><span>Budget</span><strong>{formatTokenCount(aiConfig.usage?.token_budget?.limit)}</strong></div>
+                    <div><span>Used</span><strong>{formatTokenCount(aiConfig.usage?.token_budget?.used)}</strong></div>
+                    <div><span>Remaining</span><strong>{formatTokenCount(aiConfig.usage?.token_budget?.remaining)}</strong></div>
+                    <div><span>Blocked Calls</span><strong>{formatTokenCount(aiConfig.usage?.token_budget?.blocked_calls)}</strong></div>
+                  </div>
+                  {(aiConfig.usage?.token_budget?.warnings || []).slice(-2).map((warning, idx) => (
+                    <p className="execution-note warning" key={idx}>{warning}</p>
+                  ))}
+                </div>
+              </div>
+
               <div className="execution-app-grid">
                 {appExecutionCatalog.map(app => {
                   const usage = getAppUsage(app);
@@ -6359,6 +6592,8 @@ function App() {
                       ))}
                     </div>
                   </div>
+
+                  {renderSpendAwarePanel(incidentQueryResult?.spend_aware)}
 
                   {incidentQueryResult?.mode === 'compare' && (
                     <div className="incident-compare-grid">

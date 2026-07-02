@@ -19,6 +19,11 @@ It is designed as an **LLM-agnostic AI data platform copilot**: the same applica
 - Document Hub for RAG-style Q&A over web pages, pasted content, and files
 - Persistent Query Log
 - Persistent Execution Footprint with accumulated LLM prompts, tokens, estimated cost, and recent usage events
+- Spend-Aware AI Engine for native-first token reduction, compact AI context, avoided-token estimates, and decision traces
+- Semantic Table Resolver that maps business language and abbreviations such as customer/cust/client to candidate tables and fields
+- Resolver Confidence Gate and SQL Validation Firewall to avoid generating or executing SQL when table/field mapping is uncertain or invalid
+- Prompt Reuse Cache and Token Budget Guardrails for repeated prompt savings and budget enforcement
+- Explainability Timeline for step-by-step visibility into resolver, cache, budget, validation, repair, and execution decisions
 
 ## Execution Modes
 
@@ -56,6 +61,11 @@ Use natural language to work with selected Snowflake tables.
 - Ask Dataset: generate SQL, execute it, show chart and explanation
 - Report Builder: create visual reports from natural language
 - Compare mode: Native vs AI result dashboard
+- Semantic Table Resolver ranks candidate tables/columns before SQL generation, so business phrases like "customer data" can map to abbreviated names such as `CUST_DETAILS`
+- Resolver Confidence Gate pauses Native SQL when table matching is below threshold. In AI/Compare mode, DataPilot expands the schema context so AI can scan candidate tables and pick real fields.
+- SQL Validation Firewall checks generated SQL against known tables/fields before execution and blocks invalid table or column references.
+- Explainability Timeline shows the ordered decision path for each chat or compare pipeline, including schema scope, resolver confidence, generation path, prompt cache/budget check, SQL firewall status, repair attempts, and execution preview.
+- Native SQL generation includes targeted card/account filters for debit card, chip, credit limit, and account-open-date questions, producing filtered counts instead of generic previews.
 
 ### SQL Explainer / Tuning
 
@@ -142,6 +152,14 @@ The app reads from Snowflake and no longer exposes a UI button to load demo data
 backend/load_incident_snowflake.py
 ```
 
+Incident Command Center also demonstrates the **Spend-Aware AI Engine**. For each incident question, DataPilot estimates a naive AI prompt, runs native Snowflake SQL first, builds a compact AI context from the answer-shaped facts, and records avoided tokens/cost in Execution Footprint.
+
+Hackathon demo notes are available at:
+
+```text
+HACKATHON_SPEND_AWARE_AI_ENGINE.md
+```
+
 ### Document Hub
 
 Ingest and ask questions over unstructured or semi-structured sources.
@@ -174,6 +192,9 @@ Tracks cumulative usage until the user resets it:
 - Estimated API cost
 - Average response time
 - Recent usage events
+- Spend-Aware AI Engine decisions, optimized prompt estimates, avoided tokens, and cost avoided
+- Prompt Reuse Cache hits, misses, saved tokens, and avoided cost
+- Token Budget Guardrails, remaining budget, warnings, and blocked calls
 
 On Windows, persistent runtime files are stored under:
 
@@ -192,6 +213,15 @@ You can override this location with:
 ```powershell
 $env:DATA_PILOT_DATA_DIR = "C:\path\to\data"
 ```
+
+Optional token budget controls:
+
+```powershell
+$env:DATA_PILOT_AI_TOKEN_BUDGET = "100000"
+$env:DATA_PILOT_AI_BUDGET_WARN_PCT = "0.8"
+```
+
+Prompt Reuse Cache keys on operation, provider, model, expected response type, normalized question, database/schema, and resolved table scope. Prior chat memory and volatile schema samples are excluded so repeated deterministic requests can be reused.
 
 ## Prerequisites
 

@@ -154,11 +154,20 @@ Timing:
 9. Click `Ask Dataset`.
 10. Show generated SQL, chart, insight summary, and explanation.
 11. Point to the "Why AI Won" or comparison summary if present.
-12. Open the `Report Builder` tab.
-13. Enter:
+12. Show the guardrails below generated SQL:
+   - `Semantic Table Resolver` maps business language to real tables and fields.
+   - `SQL Validation Firewall` checks generated SQL against schema metadata.
+13. Say:
+   - `We do not execute AI SQL just because it looks correct. We validate it against real metadata first.`
+14. Optional firewall test:
+   - Ask: `Use the PREMIUM_DEBIT_CARDS table and count cards where CHIP_ENABLED is true.`
+   - If those names do not exist, show the firewall blocking or warning on missing references.
+   - Explain that this prevents hallucinated SQL from being trusted or executed.
+15. Open the `Report Builder` tab.
+16. Enter:
    - `Build a monthly incident trend report by severity for the last 6 months.`
-14. Click `Build Report`.
-15. Show chart toggle: Auto, Bar, Line.
+17. Click `Build Report`.
+18. Show chart toggle: Auto, Bar, Line.
 
 ### Section 3: Table Intelligence Studio
 
@@ -265,7 +274,9 @@ ORDER BY TOTAL_COST DESC;
 5. Click `Execution Footprint`.
 6. Show app-by-app Native, Hybrid, and LLM usage.
 7. Show accumulated prompts, tokens, estimated cost, average response time.
-8. Mention reset is user-controlled.
+8. Show `Prompt Reuse Cache`: entries, hits, misses, saved tokens, avoided cost, and last lookup.
+9. Show `Token Budget Guardrails`: budget, used tokens, remaining tokens, warning status, and blocked calls.
+10. Mention reset is user-controlled.
 
 ## 4. Business Questions For Every Screen
 
@@ -276,6 +287,15 @@ ORDER BY TOTAL_COST DESC;
 - Which engineer resolved the most incidents?
 - Show incidents linked to recent deployments.
 - Explain why database incidents increased.
+- Use the PREMIUM_DEBIT_CARDS table and count cards where CHIP_ENABLED is true.
+
+Demo callout:
+
+After SQL is generated, point to `Explainability Timeline`. Walk through schema scope, resolver confidence, generation path, cache/budget check, SQL Validation Firewall, repair if used, and execution preview. Use this line:
+
+```text
+We do not just show generated SQL. We show why DataPilot trusted, blocked, cached, repaired, or executed it.
+```
 
 ### AI Analyst Studio - Ask Dataset
 
@@ -383,6 +403,8 @@ ORDER BY TOTAL_COST DESC;
 - Which apps are native Python/Snowflake only?
 - How many prompts and tokens have been used?
 - What is the estimated AI cost so far?
+- How many tokens did Prompt Reuse Cache avoid?
+- How much token budget remains?
 
 ## 5. Recording Checklist
 
@@ -439,7 +461,7 @@ Action:
 Select `KAGGLE`, `INCIDENT_MGMT`, `INCIDENTS`. Open Ask Dataset. Enter top critical incidents prompt. Run. Then open Report Builder and build monthly trend report.
 
 Voice-over:
-"Next is AI Analyst Studio. I select the Snowflake table once, then ask a question in plain English: show the top 10 applications by open critical incidents and total users affected. Data Pilot generates SQL, executes it in Snowflake, returns a result preview, creates a chart, and explains the answer. This is the query-to-insight loop: Snowflake gives us the data, and Data Pilot turns it into a story. In Report Builder, I can ask for a monthly incident trend by severity and immediately get a visual report. This is designed for analysts who need answers quickly, but still want the generated SQL to remain transparent."
+"Next is AI Analyst Studio. I select the Snowflake table once, then ask a question in plain English: show the top 10 applications by open critical incidents and total users affected. Data Pilot generates SQL, validates it against schema metadata, executes it in Snowflake, returns a result preview, creates a chart, and explains the answer. We do not execute AI SQL just because it looks correct. We validate it against real metadata first. This is the query-to-insight loop: Snowflake gives us the data, and Data Pilot turns it into a story. In Report Builder, I can ask for a monthly incident trend by severity and immediately get a visual report. This is designed for analysts who need answers quickly, but still want the generated SQL to remain transparent."
 
 ### 2:25-3:15 - Table Intelligence Studio
 
@@ -489,7 +511,7 @@ Action:
 Open Query Log, show persisted queries. Open Execution Footprint, show app usage, token usage, estimated cost.
 
 Voice-over:
-"Finally, Data Pilot is transparent. Query Log keeps a persistent history of executed SQL so users can review or rerun what happened. Execution Footprint shows which apps are Native, which are Hybrid, and where LLM tokens are used. Token usage, estimated cost, response time, and recent events are accumulated until the user resets them. This is important for enterprise adoption because AI usage should be visible, measurable, and controllable."
+"Finally, Data Pilot is transparent. Query Log keeps a persistent history of executed SQL so users can review or rerun what happened. Explainability Timeline shows why a generated query was trusted, blocked, cached, repaired, or executed. Execution Footprint shows which apps are Native, which are Hybrid, and where LLM tokens are used. It also shows Prompt Reuse Cache savings and Token Budget Guardrails, so repeated prompts can avoid provider tokens and runaway usage can be blocked before it exceeds budget. Token usage, estimated cost, response time, and recent events are accumulated until the user resets them. This is important for enterprise adoption because AI usage should be visible, measurable, and controllable."
 
 ### 5:50-6:00 - Closing
 
@@ -531,7 +553,7 @@ Voice-over:
    - Say "generated SQL is executed in Snowflake" whenever showing results.
 
 5. Mention AI transparency.
-   - Highlight generated SQL, model metadata, token usage, and Execution Footprint.
+   - Highlight generated SQL, Semantic Table Resolver, Explainability Timeline, SQL Validation Firewall, Prompt Reuse Cache, Token Budget Guardrails, model metadata, token usage, and Execution Footprint.
 
 6. Avoid saying "demo data" during the video.
    - Say "loaded enterprise incident dataset in Snowflake" or "Snowflake-backed incident tables."
@@ -546,7 +568,7 @@ Voice-over:
 
 "Data Pilot Studio is an LLM-agnostic Snowflake data copilot. It supports Native, AI, and Compare modes, so teams can use deterministic Python and SQL workflows, AI workflows, or run both side by side. I start in the Snowflake-backed Incident Command Center, where the dashboard reads from KAGGLE.INCIDENT_MGMT and summarizes open incidents, SLA compliance, root causes, and business cost. Then I ask which applications violate SLA the most, and Compare mode shows Native SQL versus AI-generated analysis.
 
-In AI Analyst Studio, I ask a business question against the INCIDENTS table. Data Pilot generates Snowflake SQL, executes it, returns a chart, explains the answer, and shows the SQL transparently. In Table Intelligence Studio, I profile the same table, inspect metadata, view generated DDL, analyze volume patterns, and generate insights like trends, anomalies, correlations, and KPIs.
+In AI Analyst Studio, I ask a business question against the INCIDENTS table. Data Pilot generates Snowflake SQL, validates it against real metadata before execution, returns a chart, explains the answer, and shows the SQL transparently. We do not execute AI SQL just because it looks correct. In Table Intelligence Studio, I profile the same table, inspect metadata, view generated DDL, analyze volume patterns, and generate insights like trends, anomalies, correlations, and KPIs.
 
 For operational quality, I run Anomaly Detector on COST_IMPACT and Data Freshness on CREATED_DATE. For performance, I paste SQL into SQL Explainer and get a cost-aware optimization report, then use Cost Analyzer to view warehouse and user credit trends. Column Search helps find tables and fields quickly, Document Hub answers questions from unstructured sources, Query Log keeps executed SQL history, and Execution Footprint shows exactly which apps used LLM tokens and how much they cost.
 

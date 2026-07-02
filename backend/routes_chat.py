@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from common import db, ai, ChatRequest, SQLRequest
+from semantic_resolver import resolve_semantic_schema, semantic_summary_text
 from typing import Optional
 from routes_table_apps import log_query
 import asyncio
@@ -147,14 +148,18 @@ def _chat_schema_context(req: ChatRequest):
         filters.append(f"table_catalog = '{_sql_literal(database)}'")
     if schema_name:
         filters.append(f"table_schema = '{_sql_literal(schema_name)}'")
-    if table_name:
-        filters.append(f"table_name = '{_sql_literal(table_name)}'")
     if filters:
         query += " WHERE " + " AND ".join(filters)
     schema_res = db.execute_query(query)
     schema_rows = schema_res.get("data", []) if schema_res.get("success") else []
+    semantic_resolution = resolve_semantic_schema(req.message or "", schema_rows, table_name)
+    semantic_tables = [match["table"] for match in semantic_resolution.get("top_matches", [])]
     if table_name and database and schema_name:
-        semantic_terms = ["CARD", "CREDIT", "LIMIT", "CHIP", "ACCT", "ACCOUNT", "OPEN", "DATE", "TYPE", "AMOUNT"]
+        semantic_terms = [
+            "CARD", "CREDIT", "LIMIT", "CHIP", "ACCT", "ACCOUNT", "OPEN", "DATE", "TYPE", "AMOUNT",
+            "CUST", "CUSTOMER", "CLIENT", "PARTY", "TXN", "TRANSACTION", "ORDER", "CLAIM", "POLICY",
+            "EMP", "EMPLOYEE", "APP", "APPLICATION", "INCIDENT", "CHANGE", "DETAIL", "DTL", "PROFILE"
+        ]
         related_filters = [
             f"table_schema = '{_sql_literal(schema_name)}'",
             f"table_name <> '{_sql_literal(table_name)}'",
@@ -169,11 +174,40 @@ def _chat_schema_context(req: ChatRequest):
             schema_rows = schema_rows + related_res.get("data", [])
     schema_summary = ""
     if schema_res.get("success"):
-        selected_rows = [row for row in schema_rows if not table_name or (row.get("TABLE_NAME") or "").upper() == table_name]
-        related_rows = [row for row in schema_rows if table_name and (row.get("TABLE_NAME") or "").upper() != table_name]
-        selected_text = "\n".join([f"Table {row['TABLE_NAME']}: {row['COLUMN_NAME']} ({row['DATA_TYPE']})" for row in selected_rows[:200]])
+        should_scan_all = semantic_resolution.get("gate") in ("ai_schema_scan", "needs_confirmation")
+        selected_rows = schema_rows if should_scan_all and not table_name else [
+            row for row in schema_rows
+            if (not table_name or (row.get("TABLE_NAME") or "").upper() == table_name)
+            or (row.get("TABLE_NAME") or "").upper() in semantic_tables
+        ]
+        if should_scan_all and table_name:
+            selected_names = {table_name.upper(), *semantic_tables}
+            selected_rows = [row for row in schema_rows if (row.get("TABLE_NAME") or "").upper() in selected_names]
+            other_rows = [row for row in schema_rows if (row.get("TABLE_NAME") or "").upper() not in selected_names]
+            selected_rows += other_rows[:800]
+        related_rows = [
+            row for row in schema_rows
+            if table_name and (row.get("TABLE_NAME") or "").upper() != table_name
+            and (row.get("TABLE_NAME") or "").upper() not in semantic_tables
+        ]
+        if semantic_tables:
+            order = {table: idx for idx, table in enumerate(semantic_tables)}
+            selected_rows = sorted(selected_rows, key=lambda row: (order.get((row.get("TABLE_NAME") or "").upper(), 999), (row.get("TABLE_NAME") or ""), (row.get("COLUMN_NAME") or "")))
+        selected_limit = 1200 if should_scan_all else 200
+        selected_text = "\n".join([f"Table {row['TABLE_NAME']}: {row['COLUMN_NAME']} ({row['DATA_TYPE']})" for row in selected_rows[:selected_limit]])
         related_text = "\n".join([f"Table {row['TABLE_NAME']}: {row['COLUMN_NAME']} ({row['DATA_TYPE']})" for row in related_rows[:200]])
         schema_summary = selected_text
+        resolver_text = semantic_summary_text(semantic_resolution)
+        if resolver_text:
+            schema_summary = resolver_text + "\n\n" + schema_summary
+        if semantic_resolution.get("gate") in ("ai_schema_scan", "needs_confirmation"):
+            schema_summary = (
+                "Resolver Confidence Gate:\n"
+                f"Gate={semantic_resolution.get('gate')}, Best score={semantic_resolution.get('best_score')}, Confidence={semantic_resolution.get('confidence')}.\n"
+                "If AI is enabled, scan the full table/column list below and choose only real tables and fields. "
+                "Do not invent table names or columns. Explain the chosen table/field mapping.\n\n"
+                + schema_summary
+            )
         if related_text:
             schema_summary += "\n\nRelated same-schema candidate fields that may better match the user question:\n" + related_text
         if database and schema_name:
@@ -181,7 +215,7 @@ def _chat_schema_context(req: ChatRequest):
             if sample_hints:
                 schema_summary += "\n\nColumn sample value hints:\n" + sample_hints
     db_ctx = f"Active DB Context: Database={database or 'None'}, Schema={schema_name or 'None'}, Table={table_name or 'None'}"
-    return database, schema_name, table_name, schema_summary, db_ctx
+    return database, schema_name, table_name, schema_summary, db_ctx, semantic_resolution, schema_rows
 
 
 def _schema_sample_hints(schema_rows, database: str, schema_name: str, selected_table: str = ""):
@@ -262,6 +296,82 @@ def _qualify_generated_sql(sql: str, database: str, schema_name: str):
     return qualified
 
 
+SQL_KEYWORDS = {
+    "select", "from", "where", "join", "left", "right", "inner", "outer", "full", "cross", "on", "as", "and", "or",
+    "group", "by", "order", "having", "limit", "offset", "case", "when", "then", "else", "end", "distinct", "with",
+    "count", "sum", "avg", "min", "max", "round", "cast", "try_cast", "try_to_date", "try_to_timestamp",
+    "regexp_replace", "replace", "dateadd", "current_date", "true", "false", "null", "is", "not", "in", "between",
+    "like", "desc", "asc", "number", "varchar", "date", "timestamp",
+}
+
+
+def _schema_map(schema_rows):
+    mapping = {}
+    for row in schema_rows or []:
+        table = (row.get("TABLE_NAME") or row.get("table_name") or "").upper()
+        column = (row.get("COLUMN_NAME") or row.get("column_name") or "").upper()
+        if table and column:
+            mapping.setdefault(table, set()).add(column)
+    return mapping
+
+
+def _strip_sql_literals(sql: str):
+    no_strings = re.sub(r"'(?:''|[^'])*'", "''", sql or "")
+    return re.sub(r"--.*?$|/\*.*?\*/", " ", no_strings, flags=re.MULTILINE | re.DOTALL)
+
+
+def _sql_validation_firewall(sql: str, schema_rows, database: str = "", schema_name: str = ""):
+    schema = _schema_map(schema_rows)
+    validation = {
+        "status": "passed",
+        "blocked": False,
+        "checked_tables": [],
+        "checked_columns": [],
+        "missing_tables": [],
+        "missing_columns": [],
+        "warnings": [],
+    }
+    if not sql:
+        validation.update({"status": "blocked", "blocked": True, "warnings": ["No SQL was generated."]})
+        return validation
+    cleaned = _strip_sql_literals(sql)
+    table_refs = _extract_table_refs(sql)
+    table_by_alias = {}
+    for ref in table_refs:
+        table = (ref.get("table") or "").upper()
+        if not table:
+            continue
+        validation["checked_tables"].append(table)
+        if schema and table not in schema:
+            validation["missing_tables"].append(table)
+    for match in re.finditer(r"\b(?:from|join)\s+([\"A-Za-z0-9_.$]+)(?:\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*))?", cleaned, flags=re.IGNORECASE):
+        raw_table = match.group(1).strip('"')
+        alias = (match.group(2) or "").upper()
+        table = raw_table.split(".")[-1].strip('"').upper()
+        if alias and alias.lower() not in SQL_KEYWORDS:
+            table_by_alias[alias] = table
+        table_by_alias[table] = table
+
+    for qualifier, column in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b", cleaned):
+        q_upper = qualifier.upper()
+        col_upper = column.upper()
+        if q_upper in (database or "").upper() or q_upper in (schema_name or "").upper():
+            continue
+        table = table_by_alias.get(q_upper, q_upper)
+        validation["checked_columns"].append(f"{q_upper}.{col_upper}")
+        if schema and table in schema and col_upper not in schema[table]:
+            validation["missing_columns"].append(f"{table}.{col_upper}")
+
+    if not validation["checked_tables"]:
+        validation["warnings"].append("No table reference was detected in generated SQL.")
+    if validation["missing_tables"] or validation["missing_columns"]:
+        validation["status"] = "blocked"
+        validation["blocked"] = True
+    elif validation["warnings"]:
+        validation["status"] = "warning"
+    return validation
+
+
 def _execute_preview(sql: str, limit: int = 100):
     if not sql:
         return {"success": False, "error": "No SQL was generated.", "execution_time_ms": 0, "rows_returned": 0, "preview": []}
@@ -284,7 +394,122 @@ def _execute_preview(sql: str, limit: int = 100):
         return {"success": False, "error": str(exc), "execution_time_ms": round((time.perf_counter() - started) * 1000, 1), "rows_returned": 0, "preview": []}
 
 
-def _pipeline_result(label: str, generated: dict, sql: str, started: float, execution: dict, error=None):
+def _timeline_step(step_id: str, label: str, status: str, detail: str, metrics=None):
+    return {
+        "id": step_id,
+        "label": label,
+        "status": status,
+        "detail": detail,
+        "metrics": metrics or {},
+    }
+
+
+def _build_explainability_timeline(
+    label: str,
+    semantic_resolution: dict,
+    generated: dict,
+    sql: str,
+    sql_validation: dict,
+    execution: dict,
+    started: float,
+    error=None,
+):
+    metadata = generated.get("ai_metadata", {}) if isinstance(generated, dict) else {}
+    resolver_gate = (semantic_resolution or {}).get("gate") or "not_available"
+    resolver_status = "passed" if resolver_gate == "native_ready" else ("review" if resolver_gate in ("ai_schema_scan", "needs_confirmation") else "info")
+    validation_blocked = bool((sql_validation or {}).get("blocked"))
+    validation_status = "blocked" if validation_blocked else ("passed" if sql_validation else "not_run")
+    cache_status = "hit" if metadata.get("cache_hit") else ("miss" if metadata.get("cache_hit") is False else "not_used")
+    token_total = int(metadata.get("prompt_tokens", 0) or 0) + int(metadata.get("completion_tokens", 0) or 0)
+    repair = generated.get("repair") if isinstance(generated, dict) else None
+    mode = metadata.get("processing_mode") or label
+    provider = metadata.get("provider") or ("Native" if label == "Native" else "AI")
+    model = metadata.get("model") or ("Rules" if provider == "Native" else "Configured model")
+    steps = [
+        _timeline_step(
+            "schema_scope",
+            "Schema Scope",
+            "passed" if (semantic_resolution or {}).get("best_table") else "review",
+            f"{(semantic_resolution or {}).get('best_table') or 'All available tables'} selected from {(semantic_resolution or {}).get('confidence', 'unknown')} resolver confidence.",
+            {
+                "gate": resolver_gate,
+                "candidate_count": len((semantic_resolution or {}).get("top_matches", []) or []),
+            },
+        ),
+        _timeline_step(
+            "resolver_gate",
+            "Resolver Confidence Gate",
+            resolver_status,
+            "Native can proceed directly." if resolver_gate == "native_ready" else "Confidence was low enough to require broader AI/schema review or user confirmation.",
+            {
+                "best_score": (semantic_resolution or {}).get("best_score"),
+                "threshold": (semantic_resolution or {}).get("thresholds", {}).get("native_ready"),
+            },
+        ),
+        _timeline_step(
+            "generation",
+            "SQL Generation Path",
+            "passed" if sql else ("blocked" if error else "review"),
+            f"{mode} generated SQL using {provider} / {model}.",
+            {
+                "time_ms": metadata.get("processing_time_ms"),
+                "confidence": metadata.get("confidence"),
+                "fallback_used": bool(metadata.get("fallback_used")),
+            },
+        ),
+        _timeline_step(
+            "cache_budget",
+            "Cache and Budget Check",
+            "passed" if cache_status == "hit" else ("review" if cache_status == "miss" else "info"),
+            "Prompt Reuse Cache served this response with zero provider tokens." if cache_status == "hit" else "Provider tokens were allowed by the Token Budget Guardrail." if cache_status == "miss" else "No provider cache/budget check was needed for this native step.",
+            {
+                "cache": cache_status,
+                "cache_key": metadata.get("cache_key"),
+                "tokens": token_total,
+                "tokens_saved": int(metadata.get("cached_prompt_tokens_saved", 0) or 0) + int(metadata.get("cached_completion_tokens_saved", 0) or 0),
+            },
+        ),
+        _timeline_step(
+            "sql_firewall",
+            "SQL Validation Firewall",
+            validation_status,
+            "SQL references matched live metadata." if validation_status == "passed" else "SQL was blocked because it referenced unknown tables or fields." if validation_status == "blocked" else "Validation did not run because no SQL was available.",
+            {
+                "tables_checked": len((sql_validation or {}).get("checked_tables", []) or []),
+                "fields_checked": len((sql_validation or {}).get("checked_columns", []) or []),
+                "warnings": len((sql_validation or {}).get("warnings", []) or []),
+            },
+        ),
+    ]
+    if repair:
+        steps.append(_timeline_step(
+            "repair",
+            "Auto Repair Loop",
+            "passed" if repair.get("success") else "review",
+            "AI repaired the SQL after validation or execution feedback." if repair.get("success") else "AI attempted repair but the query still needs review.",
+            {"attempted": True},
+        ))
+    steps.append(_timeline_step(
+        "execution",
+        "Execution Preview",
+        "passed" if execution.get("success") else ("blocked" if validation_blocked else "review"),
+        f"Returned {execution.get('rows_returned', 0)} preview rows." if execution.get("success") else execution.get("error", "Execution was skipped or did not complete."),
+        {
+            "execution_time_ms": execution.get("execution_time_ms", 0),
+            "rows": execution.get("rows_returned", 0),
+        },
+    ))
+    if error:
+        steps.append(_timeline_step("error", "Pipeline Error", "blocked", str(error), {}))
+    return {
+        "label": label,
+        "total_time_ms": round((time.perf_counter() - started) * 1000, 1),
+        "status": "blocked" if validation_blocked or error else ("passed" if execution.get("success") else "review"),
+        "steps": steps,
+    }
+
+
+def _pipeline_result(label: str, generated: dict, sql: str, started: float, execution: dict, error=None, sql_validation=None, semantic_resolution=None):
     metadata = generated.get("ai_metadata", {}) if isinstance(generated, dict) else {}
     total_ms = (time.perf_counter() - started) * 1000
     suggestions = []
@@ -297,7 +522,7 @@ def _pipeline_result(label: str, generated: dict, sql: str, started: float, exec
             suggestions.append("Use a LIMIT for exploration and demos.")
     return {
         "label": label,
-        "success": not error and bool(sql),
+        "success": not error and bool(sql) and not (sql_validation or {}).get("blocked"),
         "generated_sql": sql or "",
         "explanation": (generated or {}).get("explanation") or (generated or {}).get("reply") or "",
         "optimization_suggestions": suggestions or ["No obvious SQL-shape issues detected."],
@@ -318,6 +543,8 @@ def _pipeline_result(label: str, generated: dict, sql: str, started: float, exec
         "ai_metadata": metadata,
         "error": str(error) if error else "",
         "repair": generated.get("repair") if isinstance(generated, dict) else None,
+        "sql_validation": sql_validation or {},
+        "explainability_timeline": _build_explainability_timeline(label, semantic_resolution or {}, generated or {}, sql or "", sql_validation or {}, execution or {}, started, error),
     }
 
 
@@ -455,29 +682,87 @@ def _compare_summary(prompt: str, native: dict, ai_result: dict):
     }
 
 
-def _run_native_compare(schema_summary: str, question: str, database: str, schema_name: str):
+def _native_gate_result(question: str, semantic_resolution: dict, started: float):
+    candidates = semantic_resolution.get("top_matches", [])[:5]
+    candidate_text = ", ".join([f"{item['table']} ({item['score']})" for item in candidates]) or "no strong candidates"
+    return _pipeline_result(
+        "Native",
+        {
+            "explanation": (
+                "Native SQL generation was paused by the Resolver Confidence Gate. "
+                f"Candidate tables: {candidate_text}. Switch to AI/Compare mode or choose a specific table to continue."
+            ),
+            "ai_metadata": {
+                "processing_mode": "Native",
+                "provider": "Native",
+                "model": "Resolver Confidence Gate",
+                "processing_time_ms": round((time.perf_counter() - started) * 1000, 1),
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "confidence": semantic_resolution.get("confidence", "Low"),
+                "assumptions": "SQL was not generated because table resolution confidence was below the native threshold.",
+                "fallback_used": True,
+            },
+        },
+        "",
+        started,
+        {"success": False, "error": "Resolver confidence below Native threshold.", "execution_time_ms": 0, "rows_returned": 0, "preview": []},
+        sql_validation={"status": "blocked", "blocked": True, "warnings": ["Resolver confidence below Native threshold."]},
+        semantic_resolution=semantic_resolution,
+    )
+
+
+def _run_native_compare(schema_summary: str, question: str, database: str, schema_name: str, semantic_resolution: dict, schema_rows: list):
     started = time.perf_counter()
     try:
+        if semantic_resolution.get("gate") != "native_ready":
+            return _native_gate_result(question, semantic_resolution, started)
         generated = ai._native_generate_sql(schema_summary, question, database, schema_name)
         sql = _qualify_generated_sql(generated.get("sql", ""), database, schema_name)
+        validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
+        if validation.get("blocked"):
+            return _pipeline_result("Native", generated, sql, started, {"success": False, "error": "SQL validation firewall blocked this query.", "execution_time_ms": 0, "rows_returned": 0, "preview": []}, sql_validation=validation, semantic_resolution=semantic_resolution)
         execution = _execute_preview(sql)
-        return _pipeline_result("Native", generated, sql, started, execution)
+        return _pipeline_result("Native", generated, sql, started, execution, sql_validation=validation, semantic_resolution=semantic_resolution)
     except Exception as exc:
-        return _pipeline_result("Native", {}, "", started, {"success": False, "error": str(exc), "execution_time_ms": 0, "rows_returned": 0, "preview": []}, exc)
+        return _pipeline_result("Native", {}, "", started, {"success": False, "error": str(exc), "execution_time_ms": 0, "rows_returned": 0, "preview": []}, exc, semantic_resolution=semantic_resolution)
 
 
-def _run_ai_compare(schema_summary: str, db_ctx: str, question: str, database: str, schema_name: str):
+def _run_ai_compare(schema_summary: str, db_ctx: str, question: str, database: str, schema_name: str, schema_rows: list, semantic_resolution: dict):
     started = time.perf_counter()
     try:
         prompt = f"{question}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain English."
         generated = ai.generate_sql_ai_only(schema_summary + "\n" + db_ctx, prompt, db=database, schema=schema_name)
         sql = _qualify_generated_sql(generated.get("sql", ""), database, schema_name)
+        validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
+        if validation.get("blocked") and sql:
+            original_sql = sql
+            original_error = "SQL validation firewall blocked generated SQL: " + "; ".join(validation.get("missing_tables", []) + validation.get("missing_columns", []) + validation.get("warnings", []))
+            repaired = ai.repair_sql_ai_only(schema_summary + "\n" + db_ctx, prompt, original_sql, original_error, db=database, schema=schema_name)
+            repaired_sql = _qualify_generated_sql(repaired.get("sql", ""), database, schema_name)
+            repaired_validation = _sql_validation_firewall(repaired_sql, schema_rows, database, schema_name)
+            if repaired_sql and not repaired_validation.get("blocked"):
+                generated = repaired
+                generated["repair"] = {
+                    "attempted": True,
+                    "success": True,
+                    "original_sql": original_sql,
+                    "original_error": original_error,
+                    "repaired_sql": repaired_sql,
+                }
+                sql = repaired_sql
+                validation = repaired_validation
+            else:
+                return _pipeline_result("AI", generated, sql, started, {"success": False, "error": original_error, "execution_time_ms": 0, "rows_returned": 0, "preview": []}, sql_validation=validation, semantic_resolution=semantic_resolution)
         execution = _execute_preview(sql)
         if not execution.get("success") and sql:
             original_sql = sql
             original_error = execution.get("error", "SQL execution failed.")
             repaired = ai.repair_sql_ai_only(schema_summary + "\n" + db_ctx, prompt, original_sql, original_error, db=database, schema=schema_name)
             repaired_sql = _qualify_generated_sql(repaired.get("sql", ""), database, schema_name)
+            repaired_validation = _sql_validation_firewall(repaired_sql, schema_rows, database, schema_name)
+            if repaired_validation.get("blocked"):
+                return _pipeline_result("AI", generated, sql, started, {"success": False, "error": "SQL validation firewall blocked repaired SQL.", "execution_time_ms": 0, "rows_returned": 0, "preview": []}, sql_validation=repaired_validation, semantic_resolution=semantic_resolution)
             repaired_execution = _execute_preview(repaired_sql)
             if repaired_sql:
                 generated = repaired
@@ -490,32 +775,92 @@ def _run_ai_compare(schema_summary: str, db_ctx: str, question: str, database: s
                 }
                 sql = repaired_sql
                 execution = repaired_execution
-        return _pipeline_result("AI", generated, sql, started, execution)
+                validation = repaired_validation
+        return _pipeline_result("AI", generated, sql, started, execution, sql_validation=validation, semantic_resolution=semantic_resolution)
     except Exception as exc:
-        return _pipeline_result("AI", {}, "", started, {"success": False, "error": str(exc), "execution_time_ms": 0, "rows_returned": 0, "preview": []}, exc)
+        return _pipeline_result("AI", {}, "", started, {"success": False, "error": str(exc), "execution_time_ms": 0, "rows_returned": 0, "preview": []}, exc, semantic_resolution=semantic_resolution)
 
 
 @router.post("/api/chat")
 async def chat_assistant(req: ChatRequest):
-    database, schema_name, table_name, schema_summary, db_ctx = _chat_schema_context(req)
+    started = time.perf_counter()
+    database, schema_name, table_name, schema_summary, db_ctx, semantic_resolution, schema_rows = _chat_schema_context(req)
+    if ai.config.get("processing_mode") == "native" and semantic_resolution.get("gate") != "native_ready":
+        gate_execution = {"success": False, "error": "Resolver confidence below Native threshold.", "execution_time_ms": 0, "rows_returned": 0, "preview": []}
+        gate_validation = {"status": "blocked", "blocked": True, "warnings": ["Resolver confidence below Native threshold."]}
+        gate_generated = {
+            "explanation": "Native SQL generation was paused by the Resolver Confidence Gate.",
+            "ai_metadata": {
+                "processing_mode": "Native",
+                "provider": "Native",
+                "model": "Resolver Confidence Gate",
+                "processing_time_ms": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "confidence": semantic_resolution.get("confidence", "Low"),
+                "assumptions": "Native SQL generation was blocked until table resolution is confirmed.",
+                "fallback_used": True,
+            },
+        }
+        candidates = semantic_resolution.get("top_matches", [])[:5]
+        candidate_text = ", ".join([f"{item['table']} ({item['confidence']}, score {item['score']})" for item in candidates]) or "no strong candidates"
+        return {
+            "success": True,
+            "reply": (
+                "I paused SQL generation because the Semantic Table Resolver confidence is below the Native threshold. "
+                f"Candidate tables: {candidate_text}. Switch to AI or Compare mode to scan all tables, or choose a specific table/view."
+            ),
+            "sql": "",
+            "visualization": {"type": "none"},
+            "ai_metadata": gate_generated["ai_metadata"],
+            "semantic_resolver": semantic_resolution,
+            "sql_validation": gate_validation,
+            "explainability_timeline": _build_explainability_timeline("Native", semantic_resolution, gate_generated, "", gate_validation, gate_execution, started),
+        }
     res = ai.generate_sql(schema_summary + "\n" + db_ctx, req.message, db=database, schema=schema_name)
     sql = _qualify_generated_sql(res.get("sql", ""), database, schema_name)
+    validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
+    if validation.get("blocked") and ai.config.get("processing_mode") in ("ai", "compare") and sql:
+        repair_error = "SQL validation firewall blocked generated SQL: " + "; ".join(validation.get("missing_tables", []) + validation.get("missing_columns", []) + validation.get("warnings", []))
+        try:
+            repaired = ai.repair_sql_ai_only(schema_summary + "\n" + db_ctx, req.message, sql, repair_error, db=database, schema=schema_name)
+            repaired_sql = _qualify_generated_sql(repaired.get("sql", ""), database, schema_name)
+            repaired_validation = _sql_validation_firewall(repaired_sql, schema_rows, database, schema_name)
+            if repaired_sql and not repaired_validation.get("blocked"):
+                res = repaired
+                sql = repaired_sql
+                validation = repaired_validation
+            else:
+                validation = repaired_validation
+        except Exception as exc:
+            validation.setdefault("warnings", []).append(f"AI repair failed: {exc}")
                 
     return {
         "success": True,
-        "reply": res.get("explanation", ""),
-        "sql": sql,
+        "reply": res.get("explanation", "") if not validation.get("blocked") else "SQL generation was blocked by the validation firewall because the query referenced missing tables or fields.",
+        "sql": "" if validation.get("blocked") else sql,
         "visualization": res.get("visualization", {"type": "none"}),
-        "ai_metadata": res.get("ai_metadata", {})
+        "ai_metadata": res.get("ai_metadata", {}),
+        "semantic_resolver": semantic_resolution,
+        "sql_validation": validation,
+        "explainability_timeline": _build_explainability_timeline(
+            res.get("ai_metadata", {}).get("processing_mode") or "Chat",
+            semantic_resolution,
+            res,
+            "" if validation.get("blocked") else sql,
+            validation,
+            {"success": False, "error": "Manual execution pending.", "execution_time_ms": 0, "rows_returned": 0, "preview": []},
+            started,
+        ),
     }
 
 
 @router.post("/api/chat/compare")
 async def compare_chat_assistant(req: ChatRequest):
-    database, schema_name, table_name, schema_summary, db_ctx = await asyncio.to_thread(_chat_schema_context, req)
+    database, schema_name, table_name, schema_summary, db_ctx, semantic_resolution, schema_rows = await asyncio.to_thread(_chat_schema_context, req)
     prompt = req.message.strip()
-    native_task = asyncio.to_thread(_run_native_compare, schema_summary, prompt, database, schema_name)
-    ai_task = asyncio.to_thread(_run_ai_compare, schema_summary, db_ctx, prompt, database, schema_name)
+    native_task = asyncio.to_thread(_run_native_compare, schema_summary, prompt, database, schema_name, semantic_resolution, schema_rows)
+    ai_task = asyncio.to_thread(_run_ai_compare, schema_summary, db_ctx, prompt, database, schema_name, schema_rows, semantic_resolution)
     native_result, ai_result = await asyncio.gather(native_task, ai_task)
     return {
         "success": True,
@@ -526,6 +871,7 @@ async def compare_chat_assistant(req: ChatRequest):
             "schema": schema_name,
             "table": table_name,
         },
+        "semantic_resolver": semantic_resolution,
         "native": native_result,
         "ai": ai_result,
         "summary": _compare_summary(prompt, native_result, ai_result),

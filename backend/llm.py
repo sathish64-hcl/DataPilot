@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+import hashlib
 from datetime import datetime
 
 import httpx
@@ -252,6 +253,9 @@ PROVIDER_REGISTRY = {
 
 
 AI_USAGE_PATH = data_path("ai_usage.json")
+AI_CACHE_PATH = data_path("ai_prompt_cache.json")
+DEFAULT_TOKEN_BUDGET = int(os.getenv("DATA_PILOT_AI_TOKEN_BUDGET", "100000") or 100000)
+TOKEN_BUDGET_WARN_PCT = float(os.getenv("DATA_PILOT_AI_BUDGET_WARN_PCT", "0.8") or 0.8)
 
 
 class AI_Engine:
@@ -273,9 +277,13 @@ class AI_Engine:
             "estimated_cost": 0.0,
             "avg_response_time_ms": 0,
             "operation_usage": {},
+            "spend_aware": self._empty_spend_aware(),
+            "prompt_cache": self._empty_prompt_cache_stats(),
+            "token_budget": self._empty_token_budget(),
             "events": [],
         }
         self._load_usage()
+        self.prompt_cache = self._load_prompt_cache()
         self.response_times = []
         self.conversation = []
         self.last_metadata = None
@@ -294,6 +302,9 @@ class AI_Engine:
                     "estimated_cost": float(data.get("estimated_cost") or 0.0),
                     "avg_response_time_ms": float(data.get("avg_response_time_ms") or 0),
                     "operation_usage": data.get("operation_usage") if isinstance(data.get("operation_usage"), dict) else {},
+                    "spend_aware": self._normalize_spend_aware(data.get("spend_aware")),
+                    "prompt_cache": self._normalize_prompt_cache_stats(data.get("prompt_cache")),
+                    "token_budget": self._normalize_token_budget(data.get("token_budget")),
                     "events": data.get("events") if isinstance(data.get("events"), list) else [],
                 })
         except Exception:
@@ -305,6 +316,102 @@ class AI_Engine:
             AI_USAGE_PATH.write_text(json.dumps(self.usage, indent=2, default=str), encoding="utf-8")
         except Exception:
             pass
+
+    def _load_prompt_cache(self):
+        if not AI_CACHE_PATH.exists():
+            return {}
+        try:
+            data = json.loads(AI_CACHE_PATH.read_text(encoding="utf-8") or "{}")
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_prompt_cache(self):
+        try:
+            trimmed = dict(list(self.prompt_cache.items())[-300:])
+            self.prompt_cache = trimmed
+            AI_CACHE_PATH.write_text(json.dumps(trimmed, indent=2, default=str), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _empty_spend_aware(self):
+        return {
+            "decision_count": 0,
+            "naive_prompt_tokens": 0,
+            "optimized_prompt_tokens": 0,
+            "tokens_saved": 0,
+            "cost_avoided": 0.0,
+            "avg_reduction_pct": 0.0,
+            "events": [],
+        }
+
+    def _empty_prompt_cache_stats(self):
+        return {
+            "entries": 0,
+            "hits": 0,
+            "misses": 0,
+            "tokens_saved": 0,
+            "cost_avoided": 0.0,
+            "last_hit": None,
+            "last_lookup": None,
+        }
+
+    def _normalize_prompt_cache_stats(self, data):
+        base = self._empty_prompt_cache_stats()
+        if isinstance(data, dict):
+            base.update({
+                "entries": int(data.get("entries") or 0),
+                "hits": int(data.get("hits") or 0),
+                "misses": int(data.get("misses") or 0),
+                "tokens_saved": int(data.get("tokens_saved") or 0),
+                "cost_avoided": float(data.get("cost_avoided") or 0.0),
+                "last_hit": data.get("last_hit"),
+                "last_lookup": data.get("last_lookup"),
+            })
+        return base
+
+    def _empty_token_budget(self):
+        return {
+            "limit": DEFAULT_TOKEN_BUDGET,
+            "warn_at": int(DEFAULT_TOKEN_BUDGET * TOKEN_BUDGET_WARN_PCT),
+            "used": 0,
+            "remaining": DEFAULT_TOKEN_BUDGET,
+            "status": "ok",
+            "blocked_calls": 0,
+            "warnings": [],
+        }
+
+    def _normalize_token_budget(self, data):
+        base = self._empty_token_budget()
+        if isinstance(data, dict):
+            limit = int(data.get("limit") or DEFAULT_TOKEN_BUDGET)
+            used = int(data.get("used") or self.usage.get("total_tokens") or 0)
+            warn_at = int(data.get("warn_at") or limit * TOKEN_BUDGET_WARN_PCT)
+            status = "blocked" if used >= limit else "warning" if used >= warn_at else "ok"
+            base.update({
+                "limit": limit,
+                "warn_at": warn_at,
+                "used": used,
+                "remaining": max(0, limit - used),
+                "status": status,
+                "blocked_calls": int(data.get("blocked_calls") or 0),
+                "warnings": data.get("warnings") if isinstance(data.get("warnings"), list) else [],
+            })
+        return base
+
+    def _normalize_spend_aware(self, data):
+        base = self._empty_spend_aware()
+        if isinstance(data, dict):
+            base.update({
+                "decision_count": int(data.get("decision_count") or 0),
+                "naive_prompt_tokens": int(data.get("naive_prompt_tokens") or 0),
+                "optimized_prompt_tokens": int(data.get("optimized_prompt_tokens") or 0),
+                "tokens_saved": int(data.get("tokens_saved") or 0),
+                "cost_avoided": float(data.get("cost_avoided") or 0.0),
+                "avg_reduction_pct": float(data.get("avg_reduction_pct") or 0.0),
+                "events": data.get("events") if isinstance(data.get("events"), list) else [],
+            })
+        return base
 
     def provider_options(self):
         return [{"id": key, "label": PROVIDER_LABELS[key], "models": MODEL_CATALOG[key]} for key in PROVIDER_REGISTRY]
@@ -326,6 +433,7 @@ class AI_Engine:
         }
 
     def usage_snapshot(self):
+        self._sync_budget_status()
         return {
             **self.usage,
             "events": self.usage.get("events", [])[-200:],
@@ -368,9 +476,14 @@ class AI_Engine:
             "estimated_cost": 0.0,
             "avg_response_time_ms": 0,
             "operation_usage": {},
+            "spend_aware": self._empty_spend_aware(),
+            "prompt_cache": self._empty_prompt_cache_stats(),
+            "token_budget": self._empty_token_budget(),
             "events": [],
         }
+        self.prompt_cache = {}
         self.response_times = []
+        self._save_prompt_cache()
         self._save_usage()
         return {"success": True, "message": "Accumulated AI usage was reset.", "usage": self.usage_snapshot()}
 
@@ -438,7 +551,172 @@ class AI_Engine:
             "response_time_ms": round(elapsed_ms, 1),
         })
         self.usage["events"] = self.usage.get("events", [])[-1000:]
+        self._sync_budget_status()
         self._save_usage()
+
+    def _sync_budget_status(self):
+        budget = self.usage.setdefault("token_budget", self._empty_token_budget())
+        limit = int(budget.get("limit") or DEFAULT_TOKEN_BUDGET)
+        warn_at = int(budget.get("warn_at") or limit * TOKEN_BUDGET_WARN_PCT)
+        used = int(self.usage.get("total_tokens") or 0)
+        budget.update({
+            "limit": limit,
+            "warn_at": warn_at,
+            "used": used,
+            "remaining": max(0, limit - used),
+            "status": "blocked" if used >= limit else "warning" if used >= warn_at else "ok",
+            "warnings": budget.get("warnings", [])[-20:],
+        })
+        return budget
+
+    def _cache_key(self, operation, messages, expect_json, cache_context=None):
+        payload = {
+            "operation": operation,
+            "provider": self.config.get("provider"),
+            "model": self.config.get("model"),
+            "cache_context": cache_context,
+            "messages": None if cache_context else messages,
+            "expect_json": bool(expect_json),
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+    def _cache_lookup(self, operation, messages, expect_json, cache_context=None):
+        key = self._cache_key(operation, messages, expect_json, cache_context)
+        entry = self.prompt_cache.get(key)
+        stats = self.usage.setdefault("prompt_cache", self._empty_prompt_cache_stats())
+        scope = cache_context.get("scope") if isinstance(cache_context, dict) else operation
+        if not entry:
+            stats["misses"] = int(stats.get("misses") or 0) + 1
+            stats["entries"] = len(self.prompt_cache)
+            stats["last_lookup"] = {"status": "miss", "scope": scope, "key": key[:12], "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            self._save_usage()
+            return key, None
+        stats["hits"] = int(stats.get("hits") or 0) + 1
+        saved = int(entry.get("prompt_tokens") or 0) + int(entry.get("completion_tokens") or 0)
+        stats["tokens_saved"] = int(stats.get("tokens_saved") or 0) + saved
+        stats["cost_avoided"] = round(float(stats.get("cost_avoided") or 0) + (saved / 1000) * 0.002, 6)
+        stats["last_hit"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stats["entries"] = len(self.prompt_cache)
+        stats["last_lookup"] = {"status": "hit", "scope": scope, "key": key[:12], "timestamp": stats["last_hit"]}
+        self._save_usage()
+        return key, entry
+
+    def _cache_store(self, key, operation, messages, result, prompt_tokens, completion_tokens, cache_context=None):
+        if not key:
+            return
+        self.prompt_cache[key] = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "operation": operation,
+            "provider": self.config.get("provider"),
+            "model": self.config.get("model"),
+            "cache_context": cache_context,
+            "message_count": len(messages),
+            "text": result.text,
+            "raw": result.raw,
+            "prompt_tokens": int(prompt_tokens or 0),
+            "completion_tokens": int(completion_tokens or 0),
+        }
+        self.usage.setdefault("prompt_cache", self._empty_prompt_cache_stats())["entries"] = len(self.prompt_cache)
+        self._save_prompt_cache()
+
+    def _cacheable_messages(self, messages):
+        # Conversation memory changes on every turn, so cache against the stable system + current user payload.
+        return [m for idx, m in enumerate(messages) if m.get("role") == "system" or idx == len(messages) - 1]
+
+    def _schema_signature(self, schema_info: str):
+        stable_lines = []
+        for line in (schema_info or "").splitlines():
+            cleaned = re.sub(r"\s+", " ", line.strip())
+            if cleaned.startswith("Table ") or cleaned.startswith("Candidate ") or cleaned.startswith("Gate="):
+                stable_lines.append(cleaned.upper())
+        return hashlib.sha256("\n".join(sorted(set(stable_lines))).encode("utf-8")).hexdigest()
+
+    def _question_cache_text(self, question: str):
+        first_line = (question or "").strip().splitlines()[0] if (question or "").strip() else ""
+        return re.sub(r"\s+", " ", first_line.strip().lower())
+
+    def _schema_cache_scope(self, schema_info: str):
+        candidates = []
+        tables = []
+        for line in (schema_info or "").splitlines():
+            cleaned = line.strip()
+            if cleaned.startswith("Candidate ") and ":" in cleaned:
+                candidate = cleaned.split(":", 1)[0].replace("Candidate ", "").strip().upper()
+                if candidate:
+                    candidates.append(candidate)
+            elif cleaned.startswith("Table ") and ":" in cleaned:
+                table = cleaned.split(":", 1)[0].replace("Table ", "").strip().upper()
+                if table:
+                    tables.append(table)
+        best_table = candidates[0] if candidates else (tables[0] if len(tables) == 1 else "ALL_TABLES")
+        table_count = len(set(tables))
+        return {"best_table": best_table, "table_count": table_count}
+
+    def _nl_to_sql_cache_context(self, scope: str, schema_info: str, user_question: str, db=None, schema=None):
+        schema_scope = self._schema_cache_scope(schema_info)
+        return {
+            "scope": scope,
+            "question": self._question_cache_text(user_question),
+            "db": (db or "").upper(),
+            "schema": (schema or "").upper(),
+            "best_table": schema_scope["best_table"],
+            "table_count": schema_scope["table_count"],
+        }
+
+    def _enforce_token_budget(self, operation, estimated_prompt_tokens=0):
+        budget = self._sync_budget_status()
+        projected = int(self.usage.get("total_tokens") or 0) + int(estimated_prompt_tokens or 0)
+        if projected >= int(budget.get("limit") or DEFAULT_TOKEN_BUDGET):
+            budget["blocked_calls"] = int(budget.get("blocked_calls") or 0) + 1
+            message = (
+                f"Token budget guardrail blocked {operation}. "
+                f"Projected tokens {projected:,} exceed budget {int(budget.get('limit')):,}."
+            )
+            budget.setdefault("warnings", []).append(message)
+            budget["warnings"] = budget.get("warnings", [])[-20:]
+            budget["status"] = "blocked"
+            self._save_usage()
+            raise RuntimeError(message)
+        if projected >= int(budget.get("warn_at") or 0):
+            budget["status"] = "warning"
+            message = f"Token budget warning for {operation}: projected usage {projected:,} tokens."
+            budget.setdefault("warnings", []).append(message)
+            budget["warnings"] = budget.get("warnings", [])[-20:]
+            self._save_usage()
+
+    def estimate_tokens(self, text: str) -> int:
+        return _estimate_tokens(text)
+
+    def record_spend_aware_decision(self, event: dict):
+        naive_tokens = int(event.get("naive_prompt_tokens") or 0)
+        optimized_tokens = int(event.get("optimized_prompt_tokens") or 0)
+        tokens_saved = max(0, int(event.get("tokens_saved") or (naive_tokens - optimized_tokens)))
+        reduction_pct = round((tokens_saved / naive_tokens) * 100, 1) if naive_tokens else 0.0
+        cost_avoided = round((tokens_saved / 1000) * 0.002, 6)
+        normalized = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "feature": event.get("feature", "Spend-Aware AI Engine"),
+            "question": (event.get("question") or "")[:220],
+            "decision": event.get("decision", "Hybrid: native SQL + compact AI context"),
+            "route": event.get("route", "native-first"),
+            "naive_prompt_tokens": naive_tokens,
+            "optimized_prompt_tokens": optimized_tokens,
+            "tokens_saved": tokens_saved,
+            "reduction_pct": reduction_pct,
+            "cost_avoided": cost_avoided,
+            "trace": event.get("trace") if isinstance(event.get("trace"), list) else [],
+        }
+        stats = self.usage.setdefault("spend_aware", self._empty_spend_aware())
+        stats["decision_count"] = int(stats.get("decision_count") or 0) + 1
+        stats["naive_prompt_tokens"] = int(stats.get("naive_prompt_tokens") or 0) + naive_tokens
+        stats["optimized_prompt_tokens"] = int(stats.get("optimized_prompt_tokens") or 0) + optimized_tokens
+        stats["tokens_saved"] = int(stats.get("tokens_saved") or 0) + tokens_saved
+        stats["cost_avoided"] = round(float(stats.get("cost_avoided") or 0) + cost_avoided, 6)
+        stats["avg_reduction_pct"] = round((int(stats.get("tokens_saved") or 0) / int(stats.get("naive_prompt_tokens") or 1)) * 100, 1)
+        stats.setdefault("events", []).append(normalized)
+        stats["events"] = stats.get("events", [])[-200:]
+        self._save_usage()
+        return normalized
 
     def _metadata(self, operation, elapsed_ms, prompt_tokens=0, completion_tokens=0, fallback=False, error=None):
         provider = self.config.get("provider")
@@ -456,7 +734,7 @@ class AI_Engine:
             "error": error,
         }
 
-    def _execute_llm(self, operation, user_prompt, system_prompt="", include_memory=True, expect_json=True):
+    def _execute_llm(self, operation, user_prompt, system_prompt="", include_memory=True, expect_json=True, cache_context=None):
         if not self.config.get("enabled") or self.config.get("processing_mode") not in ("ai", "compare"):
             raise RuntimeError("AI mode is disabled.")
         provider = self._provider()
@@ -469,18 +747,42 @@ class AI_Engine:
         if include_memory:
             messages.extend(self.conversation[-8:])
         messages.append({"role": "user", "content": user_prompt})
+        estimated_prompt_tokens = _estimate_tokens(json.dumps(messages))
+        cache_messages = self._cacheable_messages(messages)
+        cache_key, cached = self._cache_lookup(operation, cache_messages, expect_json, cache_context)
+        if cached:
+            elapsed_ms = 0.0
+            text = cached.get("text", "")
+            prompt_tokens = int(cached.get("prompt_tokens") or estimated_prompt_tokens)
+            completion_tokens = int(cached.get("completion_tokens") or _estimate_tokens(text))
+            metadata = self._metadata(operation, elapsed_ms, 0, 0)
+            metadata.update({
+                "confidence": "Prompt cache hit",
+                "assumptions": "Reused a previously generated response for the same operation, model, and prompt. No provider tokens were spent.",
+                "cache_hit": True,
+                "cache_key": cache_key[:12],
+                "cached_prompt_tokens_saved": prompt_tokens,
+                "cached_completion_tokens_saved": completion_tokens,
+            })
+            self.last_metadata = metadata
+            self.connection_status = {"status": "connected", "message": "Prompt cache hit. No provider call was made.", "last_success": self.connection_status.get("last_success")}
+            return {"text": text, "json": _json_from_text(text) if expect_json else None, "metadata": metadata}
+        self._enforce_token_budget(operation, estimated_prompt_tokens)
         started = time.perf_counter()
         last_exc = None
         for _ in range(2):
             try:
                 result = provider.execute_prompt(messages)
                 elapsed_ms = (time.perf_counter() - started) * 1000
-                prompt_tokens = result.prompt_tokens or _estimate_tokens(json.dumps(messages))
+                prompt_tokens = result.prompt_tokens or estimated_prompt_tokens
                 completion_tokens = result.completion_tokens or _estimate_tokens(result.text)
                 self._record_usage(operation, prompt_tokens, completion_tokens, elapsed_ms)
+                self._cache_store(cache_key, operation, cache_messages, result, prompt_tokens, completion_tokens, cache_context)
                 self.connection_status = {"status": "connected", "message": "AI provider responded successfully.", "last_success": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 self.conversation.extend([{"role": "user", "content": user_prompt[:4000]}, {"role": "assistant", "content": result.text[:4000]}])
                 metadata = self._metadata(operation, elapsed_ms, prompt_tokens, completion_tokens)
+                metadata["cache_hit"] = False
+                metadata["cache_key"] = cache_key[:12]
                 self.last_metadata = metadata
                 return {"text": result.text, "json": _json_from_text(result.text) if expect_json else None, "metadata": metadata}
             except Exception as exc:
@@ -495,6 +797,7 @@ class AI_Engine:
     def generate_sql(self, schema_info: str, user_question: str, db=None, schema=None) -> dict:
         started = time.perf_counter()
         if self.config.get("enabled") and self.config.get("processing_mode") in ("ai", "compare"):
+            cache_context = self._nl_to_sql_cache_context("chat_nl_to_sql", schema_info, user_question, db, schema)
             prompt = f"""
 Return ONLY JSON with keys sql, explanation, visualization, confidence, assumptions.
 User question: {user_question}
@@ -503,7 +806,7 @@ Schema context:
 {schema_info}
 """
             try:
-                ai_res = self._execute_llm("nl_to_sql", prompt, PROMPT_TEMPLATES["nl_to_sql"])
+                ai_res = self._execute_llm("nl_to_sql", prompt, PROMPT_TEMPLATES["nl_to_sql"], cache_context=cache_context)
                 data = ai_res["json"]
                 data["ai_metadata"] = ai_res["metadata"]
                 return data
@@ -517,6 +820,7 @@ Schema context:
         return res
 
     def generate_sql_ai_only(self, schema_info: str, user_question: str, db=None, schema=None) -> dict:
+        cache_context = self._nl_to_sql_cache_context("compare_nl_to_sql", schema_info, user_question, db, schema)
         prompt = f"""
 Return ONLY JSON with keys sql, explanation, visualization, confidence, assumptions.
 User question: {user_question}
@@ -524,12 +828,20 @@ Database={db or 'None'}, Schema={schema or 'None'}
 Schema context:
 {schema_info}
 """
-        ai_res = self._execute_llm("nl_to_sql_compare", prompt, PROMPT_TEMPLATES["nl_to_sql"])
+        ai_res = self._execute_llm("nl_to_sql_compare", prompt, PROMPT_TEMPLATES["nl_to_sql"], cache_context=cache_context)
         data = ai_res["json"]
         data["ai_metadata"] = ai_res["metadata"]
         return data
 
     def repair_sql_ai_only(self, schema_info: str, user_question: str, failed_sql: str, error: str, db=None, schema=None) -> dict:
+        repair_scope = self._nl_to_sql_cache_context("sql_repair", schema_info, user_question, db, schema)
+        repair_scope.update({
+            "failed_sql": re.sub(r"\s+", " ", (failed_sql or "").strip().lower()),
+            "error": re.sub(r"\s+", " ", (error or "").strip().lower())[:500],
+        })
+        cache_context = {
+            **repair_scope,
+        }
         prompt = f"""
 Return ONLY JSON with keys sql, explanation, visualization, confidence, assumptions.
 The previous Snowflake SQL failed. Rewrite it so it executes and still answers the original user question.
@@ -550,7 +862,7 @@ Repair rules:
 Schema context:
 {schema_info}
 """
-        ai_res = self._execute_llm("sql_repair", prompt, PROMPT_TEMPLATES["nl_to_sql"])
+        ai_res = self._execute_llm("sql_repair", prompt, PROMPT_TEMPLATES["nl_to_sql"], cache_context=cache_context)
         data = ai_res["json"]
         data["ai_metadata"] = ai_res["metadata"]
         return data
@@ -561,9 +873,14 @@ Schema context:
         explanation = ""
         vis = {"type": "none", "x": "", "y": ""}
         schema_tables = {}
+        semantic_candidates = []
         if schema_info:
             for line in schema_info.splitlines():
                 line = line.strip()
+                if line.startswith("Candidate ") and ":" in line:
+                    candidate = line.split(":", 1)[0].replace("Candidate ", "").strip().upper()
+                    if candidate:
+                        semantic_candidates.append(candidate)
                 if line.startswith("Table ") and ":" in line:
                     try:
                         parts = line.split(":", 1)
@@ -596,7 +913,76 @@ Schema context:
         def build_sql_for_table(t_upper):
             cols = schema_tables.get(t_upper, [])
             numeric, date, text = classify(cols)
-            if any(kw in q for kw in ("first 10", "first few", "show rows", "all rows", "limit")):
+
+            def find_col(*terms, preferred_types=None):
+                preferred_types = preferred_types or set()
+                ranked = []
+                for cname, ctype in cols:
+                    lowered = cname.lower()
+                    if all(term in lowered for term in terms):
+                        score = 10 + sum(1 for term in terms if term in lowered)
+                        if ctype in preferred_types:
+                            score += 5
+                        ranked.append((score, cname, ctype))
+                ranked.sort(reverse=True)
+                return ranked[0][1:] if ranked else (None, "")
+
+            wants_card_count = (
+                any(kw in q for kw in ("how many", "count", "number of"))
+                and any(kw in q for kw in ("card", "cards", "debit", "credit limit", "chip"))
+            )
+            if wants_card_count:
+                card_type_col, _ = find_col("card", "type")
+                if not card_type_col:
+                    card_type_col, _ = find_col("type")
+                chip_col, chip_type = find_col("chip")
+                credit_limit_col, _ = find_col("credit", "limit")
+                if not credit_limit_col:
+                    credit_limit_col, _ = find_col("limit")
+                open_date_col, _ = find_col("open", "date")
+                if not open_date_col:
+                    open_date_col, _ = find_col("acct", "date")
+                if not open_date_col:
+                    open_date_col, _ = find_col("account", "date")
+
+                filters = []
+                applied = []
+                if "debit" in q and card_type_col:
+                    filters.append(f"UPPER(TO_VARCHAR({card_type_col})) LIKE '%DEBIT%'")
+                    applied.append(f"debit card type via {card_type_col}")
+                if "chip" in q and chip_col:
+                    if chip_type in {"BOOLEAN", "BOOL"}:
+                        filters.append(f"{chip_col} = TRUE")
+                    else:
+                        filters.append(f"UPPER(TO_VARCHAR({chip_col})) IN ('TRUE', 'YES', 'Y', '1', 'CHIP')")
+                    applied.append(f"chip indicator via {chip_col}")
+                if ("10k" in q or "10000" in q or "more than" in q) and credit_limit_col:
+                    filters.append(f"TRY_CAST(REGEXP_REPLACE(TO_VARCHAR({credit_limit_col}), '[^0-9.-]', '') AS NUMBER) > 10000")
+                    applied.append(f"credit limit threshold via {credit_limit_col}")
+                years_match = re.search(r"(?:last|within)\s+(\d+)\s+years?", q)
+                years = int(years_match.group(1)) if years_match else 10
+                if any(kw in q for kw in ("opened", "open", "account")) and open_date_col:
+                    filters.append(
+                        "("
+                        f"COALESCE(TRY_TO_DATE(TO_VARCHAR({open_date_col})), "
+                        f"TRY_TO_DATE(TO_VARCHAR({open_date_col}), 'MM/YYYY'), "
+                        f"TRY_TO_DATE(TO_VARCHAR({open_date_col}), 'YYYY-MM-DD')) "
+                        f">= DATEADD(year, -{years}, CURRENT_DATE())"
+                        ")"
+                    )
+                    applied.append(f"account open date window via {open_date_col}")
+                if filters:
+                    where_clause = "\n  AND ".join(filters)
+                    explanation_bits = ", ".join(applied)
+                    return (
+                        f"SELECT COUNT(*) AS matching_card_count\n"
+                        f"FROM {qualify(t_upper)}\n"
+                        f"WHERE {where_clause};",
+                        f"Counts matching cards from {t_upper} using {explanation_bits}.",
+                        {"type": "none", "x": "", "y": ""}
+                    )
+
+            if any(kw in q for kw in ("first 10", "first few", "show rows", "all rows", "sample rows", "preview rows")):
                 return f"SELECT * FROM {qualify(t_upper)} LIMIT 10;", f"Shows the first 10 rows from {t_upper}.", {"type": "none", "x": "", "y": ""}
             if any(kw in q for kw in ("how many", "count", "total records", "number of")) and (" by " in q or "group" in q) and text:
                 group_col = next((col for col in text if col.lower() in q), text[0])
@@ -619,7 +1005,12 @@ Schema context:
         if explicit_table and (explicit_table in schema_tables or schema_tables):
             sql, explanation, vis = build_sql_for_table(explicit_table if explicit_table in schema_tables else list(schema_tables.keys())[0])
         elif schema_tables:
-            matched_table = next((t for t in schema_tables if t.lower() in q or t.lower().replace("_", " ") in q), None) or list(schema_tables.keys())[0]
+            semantic_table = next((t for t in semantic_candidates if t in schema_tables), None)
+            matched_table = (
+                next((t for t in schema_tables if t.lower() in q or t.lower().replace("_", " ") in q), None)
+                or semantic_table
+                or list(schema_tables.keys())[0]
+            )
             sql, explanation, vis = build_sql_for_table(matched_table)
         else:
             sql = "SELECT * FROM customer LIMIT 10;"
