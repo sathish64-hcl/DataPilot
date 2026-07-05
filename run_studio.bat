@@ -5,7 +5,9 @@ echo Starting Data Pilot Studio Services
 echo ==========================================
 
 set "ROOT_DIR=%~dp0"
-set "PYTHON_EXE=C:\Users\mvmen\anaconda3\python.exe"
+set "PYTHON_EXE=C:\Users\mvmen\miniconda3\envs\datapilot\python.exe"
+if not exist "%PYTHON_EXE%" set "PYTHON_EXE=C:\Users\mvmen\anaconda3\python.exe"
+if not exist "%PYTHON_EXE%" set "PYTHON_EXE=C:\Users\mvmen\miniconda3\python.exe"
 if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
 
 echo [1/2] Launching Backend FastAPI Server...

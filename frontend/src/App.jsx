@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://127.0.0.1:8000';
 
 
 function SearchableSelect({ value, onChange, options, placeholder, label, className = '' }) {
@@ -195,6 +195,16 @@ function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [connectionModalOpen, setConnectionModalOpen] = useState(false);
   const [helpTipsOpen, setHelpTipsOpen] = useState(false);
+  const [guidedDemoOpen, setGuidedDemoOpen] = useState(false);
+  const [guidedDemoStepIndex, setGuidedDemoStepIndex] = useState(0);
+  const [guidedDemoAutoPlay, setGuidedDemoAutoPlay] = useState(false);
+  const [guidedDemoRunActions, setGuidedDemoRunActions] = useState(false);
+  const [guidedDemoRemaining, setGuidedDemoRemaining] = useState(20);
+  const [guidedDemoActionStatus, setGuidedDemoActionStatus] = useState('');
+  const [demoDirectorPanelMinimized, setDemoDirectorPanelMinimized] = useState(false);
+  const [demoDirectorPointer, setDemoDirectorPointer] = useState({ x: 78, y: 86, label: 'Start here' });
+  const [demoDirectorHighlight, setDemoDirectorHighlight] = useState(null);
+  const [demoDirectorResultCard, setDemoDirectorResultCard] = useState(null);
   const [activeType, setActiveType] = useState('ALL');
   const [connectionConfig, setConnectionConfig] = useState({
     platform: 'SNOWFLAKE',
@@ -214,8 +224,8 @@ function App() {
   });
   
   const [connectionStatus, setConnectionStatus] = useState({
-    status: 'connected',
-    message: 'Connected to Snowflake.',
+    status: 'disconnected',
+    message: 'Connection is yet to be established.',
     mode: 'SNOWFLAKE'
   });
 
@@ -396,7 +406,7 @@ function App() {
   const [chatMessages, setChatMessages] = useState([
     { 
       sender: 'ai', 
-      text: 'Hello! I am your Data Pilot Copilot. Ask me anything in plain English. Select a Table from the header to see suggested queries tailored to your data.',
+      text: 'Hello! I am your Data Pilot Copilot. Ask me anything in your native language. Select a Table from the header to see suggested queries tailored to your data.',
       samples: []
     }
   ]);
@@ -524,7 +534,7 @@ function App() {
       mode: 'Hybrid',
       llmOps: ['nl_to_sql', 'nl_to_sql_compare', 'sql_repair'],
       nativeWork: 'Schema lookup, SQL execution, charts, previews, row limits, comparison scoring.',
-      llmWork: 'Natural language to SQL, Compare AI pipeline, SQL auto-repair, answer explanation.',
+      llmWork: 'Native language to SQL, Compare AI pipeline, SQL auto-repair, answer explanation.',
       note: 'Uses LLM only in AI or Compare execution mode.'
     },
     {
@@ -667,6 +677,681 @@ function App() {
     );
   };
   const currentExecutionApp = appExecutionCatalog.find(app => app.id === activeTab);
+  const [demoDirectorEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('demo') === '1'
+      || params.get('demoDirector') === '1'
+      || window.localStorage.getItem('dataPilotDemoDirector') === 'enabled';
+  });
+  const demoFinanceContext = {
+    database: 'KAGGLE',
+    schema: 'FINANCE_TRAN',
+    table: 'FINANCE_CARDS_DATA'
+  };
+  const demoIncidentContext = {
+    database: 'KAGGLE',
+    schema: 'INCIDENT_MGMT',
+    table: 'INCIDENTS',
+    dateColumn: 'CREATED_DATE',
+    anomalyColumn: 'COST_IMPACT'
+  };
+  const demoContextLabel = (context) => `${context.database}.${context.schema}.${context.table}`;
+  const guidedDemoSteps = [
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      title: 'Application Landscape',
+      screen: 'Left navigation applications',
+      action: 'Start at the top of the left pane and show the full platform coverage: analyst studio, SQL tuning, table intelligence, search, anomaly, freshness, cost, incident command, document hub, query log, and execution footprint.',
+      prompt: '',
+      narration: 'Data Pilot Studio brings the core data operations workflow into one application. The left navigation includes analyst workflows, SQL tuning, table intelligence, search, anomaly detection, freshness, cost analytics, incident command, document hub, query log, and AI usage governance.',
+      value: 'One workspace for live data analysis, operations, governance, and AI-assisted workflows.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      openConnectionModal: true,
+      title: 'Database Settings',
+      screen: 'Database Settings modal',
+      action: 'Open Configure Connection, show the Database Platform choices, then show Snowflake authentication methods. Snowflake is used for this live demo.',
+      prompt: '',
+      narration: 'Database settings are separate from AI settings. The platform selector shows mock mode, Snowflake, Redshift, and PostgreSQL style targets. For this demo, Snowflake is used as the live connection. The authentication dropdown shows password, SSO external browser, and token-based options.',
+      value: 'Database connection, platform choice, and authentication are configured before the application workflows run.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      showSnowflakeSession: true,
+      title: 'Snowflake Session',
+      screen: 'Snowflake / Session section',
+      action: 'Show the Role and Warehouse selectors in the left pane. Explain that users choose these once, then every application inherits the session context.',
+      prompt: '',
+      narration: 'After connecting, the user can choose the Snowflake role and warehouse once from the sidebar. That keeps session control consistent while each application still lets the user pick database, schema, table, view, and date or column fields as needed.',
+      value: 'Makes enterprise Snowflake controls visible and reusable.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      showAiConfig: true,
+      title: 'AI Configuration',
+      screen: 'AI Configuration section',
+      action: 'Show AI Provider, Model, API key, optional Base URL, Test Connection, and connection status.',
+      prompt: '',
+      narration: 'AI configuration is also separate. The user can choose OpenAI, Azure OpenAI, Claude, Gemini, Cortex, Ollama, or a custom OpenAI-compatible endpoint, then test the connection before running AI workflows.',
+      value: 'Positions the product as an LLM-agnostic enterprise AI data copilot.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      showAiConfig: true,
+      title: 'Native, AI, And Compare Modes',
+      screen: 'Execution Mode selector',
+      action: 'Explain Native, AI, and Compare. Native runs Python and Snowflake SQL only. AI routes supported reasoning through the configured model. Compare runs both independently and scores intent match, SQL quality, results, explanation, and performance.',
+      prompt: '',
+      narration: 'The execution mode is the core differentiator. Native mode proves the app is reliable without an LLM. AI mode adds reasoning, SQL generation, explanation, and recommendations. Compare mode runs both pipelines side by side to show exactly where AI adds value.',
+      value: 'This makes the AI value measurable instead of just claimed.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'chat',
+      context: 'finance',
+      time: '2:25 - 3:20',
+      title: 'AI Chat Copilot',
+      screen: 'AI Analyst Studio / Chat',
+      action: `Select ${demoContextLabel(demoFinanceContext)}, ask a natural-language card analytics question, and show the generated SQL and answer in the chat thread.`,
+      prompt: 'How many debit cards have a chip, credit limit greater than 10000 dollars, and account opened within the last 10 years?',
+      narration: 'AI Chat is the conversational entry point. In this step, the selected context is the finance cards table. The assistant should inspect the table fields before writing SQL, handle formatted currency values correctly, and return an answer with transparent generated SQL.',
+      value: 'Conversational analysis starts from the selected live Snowflake table and keeps SQL visible.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'ask',
+      context: 'finance',
+      time: '3:20 - 4:15',
+      title: 'Query-To-Insight Loop',
+      screen: 'AI Analyst Studio / Ask Dataset',
+      action: `Use ${demoContextLabel(demoFinanceContext)}, ask a card portfolio question, and show SQL, chart, result preview, explanation, and Compare summary.`,
+      prompt: 'Show average credit limit by card brand for cards with chip, and include the number of cards for each brand.',
+      narration: 'The user asks in native language against a different Snowflake table. Data Pilot generates SQL, validates it against metadata, executes it in Snowflake, visualizes the result, and explains the answer.',
+      value: 'Turns Snowflake results into a story while preserving SQL transparency.'
+    },
+    {
+      tab: 'chat',
+      analystTab: 'report',
+      time: '4:15 - 5:00',
+      title: 'Natural Language Report Builder',
+      screen: 'AI Analyst Studio / Report Builder',
+      action: 'Build a report and show Auto, Bar, and Line chart options.',
+      prompt: 'Build a monthly account opening trend based on the card type',
+      narration: 'Report Builder lets an analyst describe the report they want and get generated SQL plus a visual output without manually designing the chart first.',
+      value: 'Demo-friendly visual analytics from native language.'
+    },
+    {
+      tab: 'tableDetails',
+      tableDetailsTab: 'overview',
+      time: '5:00 - 5:55',
+      title: 'Table Intelligence Studio',
+      screen: 'Overview, Table Details, Profiler',
+      action: 'Select INCIDENTS, load details, run profile, and move through metadata, sample rows, profiler stats, AI health, DQ checks, and labels.',
+      prompt: '',
+      narration: 'Table Intelligence brings catalog, profiling, DDL, quick SQL, and AI-assisted descriptions into one selected-table workflow.',
+      value: 'Moves from raw schema browsing to data product understanding.'
+    },
+    {
+      tab: 'tableDetails',
+      tableDetailsTab: 'volumeAnalyzer',
+      time: '5:55 - 6:35',
+      title: 'Volume Analyzer',
+      screen: 'Table Intelligence Studio / Volume Analyzer',
+      action: 'Select CREATED_DATE, choose Event or Batch, load analytics, and switch throughput and peak-pattern chart options.',
+      prompt: '',
+      narration: 'Volume Analyzer lets users decide whether a date field represents batch or event behavior, then shows throughput, peak heatmaps, drops, spikes, and flagged buckets.',
+      value: 'Makes freshness and operational volume issues visible instead of buried in SQL.'
+    },
+    {
+      tab: 'tableDetails',
+      tableDetailsTab: 'insights',
+      time: '6:35 - 7:10',
+      title: 'Insight Generator',
+      screen: 'Table Intelligence Studio / Insight Generator',
+      action: 'Generate insights and show KPI, trend, anomaly, correlation, and PII-like cards with executable query cards.',
+      prompt: '',
+      narration: 'Insight Generator turns a table into analyst-style findings such as trends, anomalies, correlations, business KPIs, and likely sensitive fields.',
+      value: 'This is the data catalog becoming a data analyst.'
+    },
+    {
+      tab: 'anomaly',
+      anomalyTab: 'scan',
+      time: '7:10 - 7:50',
+      title: 'Anomaly Detector',
+      screen: 'Anomaly Detector',
+      action: 'Scan COST_IMPACT, switch plot options, then open Custom Rule and preview executable SQL.',
+      prompt: 'Custom rule: COST_IMPACT greater than 5000',
+      narration: 'The anomaly app uses statistical and rule-based checks for numeric, date, and text columns, while still giving users executable SQL for custom business rules.',
+      value: 'Combines explainable data quality checks with analyst-controlled rules.'
+    },
+    {
+      tab: 'freshness',
+      time: '7:50 - 8:25',
+      title: 'Data Freshness',
+      screen: 'Data Freshness',
+      action: 'Select INCIDENTS and CREATED_DATE, run freshness, and show Age Hours, Latest Rows, Previous Rows, and the trend chart.',
+      prompt: '',
+      narration: 'Freshness is calculated from the date field the user chooses, so the app does not guess which timestamp defines recency.',
+      value: 'Practical operational trust check for every table.'
+    },
+    {
+      tab: 'sql',
+      time: '8:25 - 9:10',
+      title: 'Cost-Aware SQL Tuning',
+      screen: 'SQL Explainer / Tuning',
+      action: 'Click Analyze & Optimize SQL and show cost advisor, AI performance report, optimized SQL, validation timeline, and execute/copy controls.',
+      prompt: `SELECT APP_NAME, COUNT(*) AS INCIDENT_COUNT, SUM(COST_IMPACT) AS TOTAL_COST
+FROM KAGGLE.INCIDENT_MGMT.INCIDENTS
+WHERE CREATED_DATE >= DATEADD(DAY, -90, CURRENT_DATE())
+GROUP BY APP_NAME
+ORDER BY TOTAL_COST DESC;`,
+      narration: 'SQL tuning combines native cost awareness with AI explanation and rewrite suggestions, so users can understand performance and cost before repeating expensive patterns.',
+      value: 'Connects SQL quality to Snowflake spend.'
+    },
+    {
+      tab: 'cost',
+      time: '9:10 - 9:45',
+      title: 'Snowflake Cost Analyzer',
+      screen: 'Cost Analyzer',
+      action: 'Show daily trend, warehouse view, user view, scatter plot, and recommendations.',
+      prompt: '',
+      narration: 'Cost Analyzer gives a platform-level view of credits, expensive queries, warehouse usage, and optimization opportunities.',
+      value: 'Makes cost governance visible across technical and business workflows.'
+    },
+    {
+      tab: 'catalogSearch',
+      time: '9:45 - 10:15',
+      title: 'Search And Discovery',
+      screen: 'Column / Table Search',
+      action: 'Search incident, then narrow column results with table keyword SLA or date/cost filters.',
+      prompt: 'Search: incident. Column table filter: sla.',
+      narration: 'Search separates table matches from column matches, then lets users narrow large schemas by data type and table keyword.',
+      value: 'Reduces discovery noise in large Snowflake estates.'
+    },
+    {
+      tab: 'rag',
+      time: '10:15 - 11:00',
+      title: 'Document Hub',
+      screen: 'Document Hub',
+      action: 'Ask a table-documentation question and show how Document Hub answers from learned web pages, files, JSON, CSV, Excel, and runbook-style content.',
+      prompt: 'Read the table-related documentation and explain what the INCIDENTS table is used for, which fields are important, and what questions a user can answer quickly.',
+      narration: 'Document Hub can learn table-related documentation, runbooks, data dictionaries, web pages, and files. Users can ask questions without reading the full document, and the answer can be paired with Snowflake table analysis.',
+      value: 'Turns table documentation into quick answers for users working with the data.'
+    },
+    {
+      tab: 'queryLog',
+      time: '11:00 - 11:25',
+      title: 'Persistent Query Log',
+      screen: 'Query Log',
+      action: 'Show persisted SQL generated and executed across the workbench. Point out replay/execute options on logged queries.',
+      prompt: '',
+      narration: 'Query Log keeps the SQL history visible after execution, so generated queries are not lost in a chat stream or buried at the bottom of a page.',
+      value: 'Gives the demo an audit trail and makes generated SQL reusable.'
+    },
+    {
+      tab: 'executionFootprint',
+      time: '11:25 - 11:55',
+      title: 'Execution Footprint And Spend-Aware AI',
+      screen: 'Execution Footprint',
+      action: 'Introduce Execution Footprint, then highlight prompt optimization, tokens avoided, cost avoided, prompt cache savings, and budget status.',
+      prompt: '',
+      narration: 'Execution Footprint is the control room for AI usage across the application. It shows which workflows used AI, token usage, estimated cost, response time, recent events, prompt cache savings, and token budget status.',
+      value: 'Shows enterprise-grade AI governance, not just AI features.'
+    },
+    {
+      tab: 'executionFootprint',
+      time: '11:55 - 12:30',
+      title: 'Governance And AI Transparency',
+      screen: 'Execution Footprint',
+      action: 'Show app-by-app Native/Hybrid usage, spend-aware decisions, prompt cache, token budget, accumulated token usage, and reset control.',
+      prompt: '',
+      narration: 'Execution Footprint explains which apps used LLM tokens, which stayed native, how many tokens were consumed, what cost was estimated, and how spend-aware routing avoided unnecessary model calls.',
+      value: 'AI usage is observable, governed, and reset only by the user.'
+    },
+    {
+      tab: 'incidentCommand',
+      time: '12:30 - 13:15',
+      title: 'Custom Client Application',
+      screen: 'Incident Command Center',
+      action: 'Open Incident Command Center last, refresh the dashboard, and ask the SLA question in Compare mode.',
+      prompt: 'Which applications violate SLA the most?',
+      narration: 'The final application shows client-specific customization. Incident Command Center is built around an operational incident-management dataset instead of a generic table browser. The same platform shell can host custom applications for a client domain, such as incident triage, claims review, finance controls, or supply-chain monitoring.',
+      value: 'The platform can be customized into client-specific applications while still using the same Snowflake, AI, query, and governance foundation.'
+    }
+  ];
+  const guidedDemoStep = guidedDemoSteps[guidedDemoStepIndex] || guidedDemoSteps[0];
+  const getGuidedDemoStepSeconds = (step) => {
+    if (!step) return 18;
+    const narrationWords = String(step.narration || '').trim().split(/\s+/).filter(Boolean).length;
+    const actionWords = String(step.action || '').trim().split(/\s+/).filter(Boolean).length;
+    const promptLines = String(step.prompt || '').split('\n').filter(line => line.trim()).length;
+    const base = 8 + Math.ceil(narrationWords / 2.3) + Math.ceil(actionWords / 8) + Math.min(12, promptLines * 2);
+    return Math.max(14, Math.min(60, base));
+  };
+  const formatDemoClock = (seconds) => {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return `${minutes}:${String(remainder).padStart(2, '0')}`;
+  };
+  const getGuidedDemoStepWindow = (index) => {
+    const start = guidedDemoSteps.slice(0, index).reduce((sum, step) => sum + getGuidedDemoStepSeconds(step), 0);
+    const end = start + getGuidedDemoStepSeconds(guidedDemoSteps[index]);
+    return `${formatDemoClock(start)} - ${formatDemoClock(end)}`;
+  };
+  const guidedDemoCurrentSeconds = getGuidedDemoStepSeconds(guidedDemoStep);
+  const getDemoDirectorCue = (step) => {
+    if (!step) return {};
+    if (step.openConnectionModal) {
+      return {
+        focusSelector: '.database-platform-select',
+        resultSelector: '.snowflake-auth-method-select',
+        resultTitle: 'Database Settings',
+        resultBullets: ['Database Platform includes mock mode, Snowflake, Redshift, and PostgreSQL style targets.', 'Snowflake is selected for the live demo.', 'Authentication supports password, SSO external browser, and token-based options.']
+      };
+    }
+    if (step.showSnowflakeSession) {
+      return {
+        focusSelector: '.sidebar-session-context',
+        resultSelector: '.sidebar-session-context',
+        resultTitle: 'Snowflake Session Control',
+        resultBullets: ['Role and Warehouse are selected once from the left pane.', 'Every application inherits the chosen session context.', 'Users still choose DB, schema, table, view, and fields inside each app.']
+      };
+    }
+    if (step.showAiConfig) {
+      return {
+        focusSelector: '.sidebar-ai-config',
+        resultSelector: '.sidebar-ai-config',
+        resultTitle: step.title,
+        resultBullets: step.title.includes('Native')
+          ? ['Native mode uses Python and Snowflake SQL without LLM calls.', 'AI mode uses the configured model for reasoning, SQL, explanations, and recommendations.', 'Compare mode runs both pipelines independently and explains which output best matched the request.']
+          : ['Provider, model, API key, and optional base URL are configured in one place.', 'AI can be enabled only when needed.', 'The Test Connection status makes model readiness visible before the demo.']
+      };
+    }
+    if (step.title === 'Application Landscape') {
+      return {
+        focusSelector: '.sidebar-menu',
+        resultSelector: '.sidebar-menu',
+        resultTitle: 'Platform Overview',
+        resultBullets: ['The suite covers analyst chat, SQL tuning, table intelligence, search, anomaly, freshness, cost, incidents, documents, query log, and AI usage.', 'The first shot starts at the top of the left pane.', 'Each workflow stays available from a single application shell.']
+      };
+    }
+    if (step.title === 'Execution Footprint And Spend-Aware AI') {
+      return {
+        focusSelector: '.execution-spend-aware-card',
+        resultSelector: '.execution-spend-aware-card',
+        resultTitle: 'Execution Footprint',
+        resultBullets: ['This screen explains where Native, Snowflake, and LLM work happened.', 'Prompt count, tokens, estimated cost, response time, cache savings, and budget status are visible.', 'AI value is measured and governed across sessions.']
+      };
+    }
+    if (step.title === 'AI Chat Copilot') {
+      return {
+        focusSelector: '.chat-input-row',
+        resultSelector: '.chat-messages',
+        resultTitle: 'AI Chat Copilot',
+        resultBullets: ['The selected table is visible in the header before the question runs.', 'The prompt asks against the finance cards table, not the incident table.', 'Generated SQL and results remain visible in the conversation.']
+      };
+    }
+    if (step.tab === 'chat' && step.analystTab === 'chat') {
+      return {
+        focusSelector: '.sidebar-ai-config',
+        resultSelector: '.processing-mode-badge',
+        resultTitle: 'LLM-Agnostic Control Plane',
+        resultBullets: ['Execution mode is visible before the demo starts.', 'AI provider and Snowflake context are configured separately.', 'Native mode can run without token usage.']
+      };
+    }
+    if (step.tab === 'incidentCommand') {
+      return {
+        focusSelector: '.incident-command-page',
+        resultSelector: '.incident-command-hero',
+        resultTitle: 'Custom Client Application',
+        resultBullets: ['Incident Command Center is a client-specific application built on the same platform shell.', 'It reads the incident-management Snowflake tables and presents domain KPIs, trends, and triage.', 'The same approach can be customized for other client domains.']
+      };
+    }
+    if (step.tab === 'chat' && step.analystTab === 'ask') {
+      return {
+        focusSelector: '.ask-dataset-control',
+        resultSelector: '.ask-dataset-results',
+        resultTitle: 'Query-To-Insight Result',
+        resultBullets: ['Native language becomes executable Snowflake SQL.', 'The result includes preview rows, chart, explanation, and Compare summary.', 'The SQL remains visible for trust and auditability.']
+      };
+    }
+    if (step.tab === 'chat' && step.analystTab === 'report') {
+      return {
+        focusSelector: '.report-builder-card',
+        resultSelector: '.report-chart-wrap',
+        resultTitle: 'Report Built From Native Language',
+        resultBullets: ['The app generates report SQL and runs it.', 'Chart controls make the output demo-friendly.', 'This shows analyst productivity, not only query generation.']
+      };
+    }
+    if (step.tab === 'tableDetails' && step.tableDetailsTab === 'overview') {
+      return {
+        focusSelector: '.table-intelligence-control',
+        resultSelector: '.table-intelligence-content',
+        resultTitle: 'Single Table Intelligence Workspace',
+        resultBullets: ['Metadata, samples, DDL, profiler, DQ checks, and labels live together.', 'The selected Snowflake table remains active across tabs.', 'This combines catalog and profiler workflows cleanly.']
+      };
+    }
+    if (step.tab === 'tableDetails' && step.tableDetailsTab === 'volumeAnalyzer') {
+      return {
+        focusSelector: '.volume-analyzer-control-grid',
+        resultSelector: '.volume-analytics-card',
+        resultTitle: 'Operational Volume Analyzer',
+        resultBullets: ['User chooses event or batch behavior for the date field.', 'Throughput charts and heatmaps expose peaks and drops.', 'Flagged buckets explain Rolling Median, MAD, and Modified Z signals.']
+      };
+    }
+    if (step.tab === 'tableDetails' && step.tableDetailsTab === 'insights') {
+      return {
+        focusSelector: '.table-intelligence-content',
+        resultSelector: '.insight-card',
+        resultTitle: 'Insight Generator',
+        resultBullets: ['The table becomes KPI, trend, anomaly, correlation, and PII-like findings.', 'Each insight keeps executable SQL nearby.', 'This is the strongest data-catalog-to-data-analyst moment.']
+      };
+    }
+    if (step.tab === 'anomaly') {
+      return {
+        focusSelector: '.anomaly-page',
+        resultSelector: '.anomaly-chart-card',
+        resultTitle: 'Explainable Anomaly Detection',
+        resultBullets: ['Numeric columns use Z-score and IQR style outlier views.', 'Date buckets use MAD-based peak/drop detection.', 'Custom rules generate executable SQL with inline result previews.']
+      };
+    }
+    if (step.tab === 'freshness') {
+      return {
+        focusSelector: '.freshness-date-field-panel',
+        resultSelector: '.freshness-detail-card',
+        resultTitle: 'Freshness Based On User-Chosen Date Field',
+        resultBullets: ['The app does not guess the freshness column.', 'Age Hours, Latest Rows, Previous Rows, and volume change are visible.', 'No-date-field tables get a clear message.']
+      };
+    }
+    if (step.tab === 'sql') {
+      return {
+        focusSelector: '.sql-input-card',
+        resultSelector: '.sql-optimizer-card',
+        resultTitle: 'Cost-Aware SQL Tuning',
+        resultBullets: ['One button estimates cost and produces optimization guidance.', 'Cost advisor and AI performance report are separated but aligned.', 'Optimized SQL keeps execute and copy controls readable.']
+      };
+    }
+    if (step.tab === 'cost') {
+      return {
+        focusSelector: '.cost-hero',
+        resultSelector: '.cost-chart-shell',
+        resultTitle: 'Snowflake Spend Visibility',
+        resultBullets: ['Credits, cost, warehouse usage, user usage, and expensive queries are connected.', 'Charts summarize the spend pattern quickly.', 'Recommendations translate history into action.']
+      };
+    }
+    if (step.tab === 'catalogSearch') {
+      return {
+        focusSelector: '.catalog-search-page',
+        resultSelector: '.catalog-results-layout',
+        resultTitle: 'Fast Metadata Discovery',
+        resultBullets: ['Tables and columns are shown separately.', 'Column results can be narrowed by table keyword.', 'Generated SELECT statements make discovery immediately useful.']
+      };
+    }
+    if (step.tab === 'rag') {
+      return {
+        focusSelector: '.document-hub-page',
+        resultSelector: '.rag-result-card',
+        resultTitle: 'Table Documentation Answers',
+        resultBullets: ['Learns table-related documents, runbooks, web pages, files, JSON, CSV, and Excel.', 'Answers questions without forcing users to read the full document.', 'Connects documentation context with Snowflake table analysis.']
+      };
+    }
+    if (step.tab === 'queryLog') {
+      return {
+        focusSelector: '.query-log-page',
+        resultSelector: '.query-log-list',
+        resultTitle: 'Persistent SQL Audit Trail',
+        resultBullets: ['Generated SQL survives app restarts until the user clears it.', 'Logged queries can be replayed from one place.', 'This prevents demo SQL from disappearing into scattered pages.']
+      };
+    }
+    if (step.tab === 'executionFootprint') {
+      return {
+        focusSelector: '.execution-footprint-page',
+        resultSelector: '.execution-overview-card',
+        resultTitle: 'AI Governance And Token Transparency',
+        resultBullets: ['Shows which apps use LLMs and which remain native.', 'Token usage is cumulative until reset by the user.', 'Spend-aware routing and cache savings are visible.']
+      };
+    }
+    return {
+      focusSelector: '.tab-content',
+      resultSelector: '.tab-content',
+      resultTitle: step.title,
+      resultBullets: [step.value]
+    };
+  };
+
+  const focusDemoDirectorTarget = (selector, label = 'Watch here', attempt = 0) => {
+    if (typeof document === 'undefined') return;
+    const target = selector ? document.querySelector(selector) : null;
+    const fallback = document.querySelector('.tab-content') || document.querySelector('.main-content');
+    const element = target || fallback;
+    if (!element) return;
+    element.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    window.setTimeout(() => {
+      const rect = element.getBoundingClientRect();
+      if ((rect.width <= 0 || rect.height <= 0) && attempt < 2) {
+        focusDemoDirectorTarget(selector, label, attempt + 1);
+        return;
+      }
+      const padding = 10;
+      const left = Math.max(padding, rect.left);
+      const top = Math.max(padding, rect.top);
+      const width = Math.min(window.innerWidth - left - padding, Math.max(120, rect.width));
+      const height = Math.min(window.innerHeight - top - padding, Math.max(70, rect.height));
+      setDemoDirectorHighlight({ left, top, width, height });
+      setDemoDirectorPointer({
+        x: Math.min(window.innerWidth - 210, Math.max(28, left + Math.min(width * 0.72, width - 28))),
+        y: Math.min(window.innerHeight - 84, Math.max(28, top + 18)),
+        label
+      });
+    }, attempt === 0 ? 520 : 220);
+  };
+
+  const waitForDemo = (ms) => new Promise(resolve => window.setTimeout(resolve, ms));
+
+  const findDemoChatSqlBlock = () => {
+    if (typeof document === 'undefined') return null;
+    const candidates = Array.from(document.querySelectorAll('.demo-chat-sql-block, .chat-bubble.ai .code-container'));
+    return [...candidates].reverse().find((element) => {
+      const text = element.innerText || '';
+      return /\bselect\b/i.test(text) || /generated .*sql/i.test(text);
+    }) || null;
+  };
+
+  const waitForDemoChatSqlBlock = async (timeoutMs = 9000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const block = findDemoChatSqlBlock();
+      if (block) return block;
+      await waitForDemo(180);
+    }
+    return null;
+  };
+
+  const parkDemoDirectorPointer = (label = '') => {
+    if (typeof window === 'undefined') return;
+    setDemoDirectorHighlight(null);
+    setDemoDirectorPointer({
+      x: Math.min(Math.max(320, window.innerWidth * 0.46), window.innerWidth - 260),
+      y: 82,
+      label
+    });
+  };
+
+  const showDemoCompleteCard = () => {
+    setDemoDirectorHighlight(null);
+    parkDemoDirectorPointer('Demo ended');
+    setDemoDirectorResultCard({
+      phase: 'complete',
+      title: 'Demo Ended',
+      screen: 'Demo Director',
+      value: 'AI-powered data work without giving up trust, control, or portability.',
+      bullets: [
+        'Live Snowflake execution, native reliability, validated SQL, and governed AI work together.',
+        'RAG-based knowledge search, cost visibility, query history, and execution footprint keep the system explainable.',
+        'The same platform can adapt into client-specific applications like Incident Command Center.'
+      ],
+      status: 'Complete'
+    });
+  };
+
+  const slowScrollDemoTarget = async (selector, options = {}) => {
+    const element = document.querySelector(selector);
+    if (!element) return;
+    element.scrollIntoView?.({ block: options.block || 'center', inline: 'nearest', behavior: 'smooth' });
+    await waitForDemo(options.initialPause || 1200);
+    const scrollTarget = element.scrollHeight > element.clientHeight ? element : document.querySelector('.main-content');
+    const increments = options.increments || [120, 140];
+    for (const amount of increments) {
+      scrollTarget?.scrollBy?.({ top: amount, behavior: 'smooth' });
+      await waitForDemo(options.pause || 1200);
+    }
+  };
+
+  const showDemoDirectorCue = (step, phase = 'focus') => {
+    const cue = getDemoDirectorCue(step);
+    setDemoDirectorResultCard({
+      phase,
+      title: cue.resultTitle || step?.title || 'Demo Director',
+      screen: step?.screen || '',
+      value: step?.value || '',
+      bullets: cue.resultBullets || [],
+      status: phase === 'result' ? 'Result highlight' : guidedDemoRunActions ? 'Running demo step' : 'Active focus'
+    });
+    focusDemoDirectorTarget(phase === 'result' ? cue.resultSelector : cue.focusSelector, cue.resultTitle || step?.title || 'Watch here');
+  };
+  const focusSelectedDemoApplication = (step) => {
+    if (!step?.tab || step.openConnectionModal || step.showSnowflakeSession || step.showAiConfig || step.title === 'Application Landscape') return false;
+    const selector = `[data-demo-tab="${step.tab}"]`;
+    focusDemoDirectorTarget(selector, step.title || 'Selected application');
+    return true;
+  };
+
+  const applyGuidedDemoStep = (index) => {
+    const step = guidedDemoSteps[index];
+    if (!step) return;
+    setActiveTab(step.tab);
+    setConnectionModalOpen(Boolean(step.openConnectionModal));
+    if (step.context === 'finance') {
+      setDemoActiveContext(demoFinanceContext);
+    } else if (['tableDetails', 'anomaly', 'freshness', 'catalogSearch', 'sql', 'incidentCommand'].includes(step.tab)) {
+      setDemoActiveContext(demoIncidentContext);
+    }
+    if (step.title === 'Application Landscape') {
+      document.querySelector('.sidebar-menu')?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (step.showSnowflakeSession) {
+      setSnowflakeContextOpen(true);
+      setAiConfigOpen(false);
+      document.querySelector('.sidebar-menu')?.scrollTo({ top: 9999, behavior: 'smooth' });
+    }
+    if (step.showAiConfig) {
+      setAiConfigOpen(true);
+      document.querySelector('.sidebar-menu')?.scrollTo({ top: 9999, behavior: 'smooth' });
+    }
+    if (step.analystTab) setAnalystStudioTab(step.analystTab);
+    if (step.tableDetailsTab) setTableDetailsTab(step.tableDetailsTab);
+    if (step.anomalyTab) setAnomalyTab(step.anomalyTab);
+    if (step.tab === 'cost') {
+      fetchCostDashboard();
+      setCostChartMode('trend');
+    }
+    if (step.tab === 'incidentCommand') {
+      fetchIncidentCommandDashboard();
+      setIncidentQuestion(step.prompt || 'Which applications violate SLA the most?');
+    }
+    if (step.tab === 'rag') {
+      fetchRagDocuments();
+      setRagQuery(step.prompt || '');
+    }
+    if (step.tab === 'queryLog') loadWorkbenchQueryLog();
+    if (step.tab === 'executionFootprint') refreshAiUsage();
+    if (step.tab === 'chat' && step.analystTab === 'ask') {
+      setAskDatasetQuestion(step.prompt || '');
+    }
+    if (step.tab === 'chat' && step.analystTab === 'report') {
+      setReportPrompt(step.prompt || '');
+    }
+    if (step.tab === 'sql' && step.prompt) {
+      setSqlQuery(step.prompt);
+    }
+    if (['tableDetails', 'anomaly', 'freshness'].includes(step.tab)) {
+      setAppScopes(prev => ({
+        ...prev,
+        tableDetails: { ...prev.tableDetails, database: 'KAGGLE', schema: 'INCIDENT_MGMT', type: 'TABLE', table: 'INCIDENTS' },
+        profiler: { ...prev.profiler, database: 'KAGGLE', schema: 'INCIDENT_MGMT', type: 'TABLE', table: 'INCIDENTS' },
+        anomaly: { ...prev.anomaly, database: 'KAGGLE', schema: 'INCIDENT_MGMT', type: 'TABLE', table: 'INCIDENTS', column: step.tab === 'anomaly' ? 'COST_IMPACT' : prev.anomaly.column },
+        freshness: { ...prev.freshness, database: 'KAGGLE', schema: 'INCIDENT_MGMT', type: 'TABLE', table: 'INCIDENTS', column: step.tab === 'freshness' ? 'CREATED_DATE' : prev.freshness.column }
+      }));
+      if (step.tab === 'tableDetails') setVolumeAnalyzerColumn('CREATED_DATE');
+    }
+    setTimeout(() => {
+      document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
+      const showedAppPointer = focusSelectedDemoApplication(step);
+      window.setTimeout(() => {
+        showDemoDirectorCue(step, 'focus');
+        if (step.openConnectionModal) {
+          window.setTimeout(() => focusDemoDirectorTarget('.snowflake-auth-method-select', 'Authentication methods'), 1400);
+          window.setTimeout(() => parkDemoDirectorPointer(), 3200);
+        } else {
+          window.setTimeout(() => parkDemoDirectorPointer(), showedAppPointer ? 2600 : 1900);
+        }
+      }, showedAppPointer ? 1150 : 120);
+    }, 60);
+  };
+
+  const startGuidedDemo = () => {
+    setGuidedDemoOpen(true);
+    setDemoDirectorPanelMinimized(false);
+    saveAiConfig({ processing_mode: 'ai', enabled: true });
+    setGuidedDemoStepIndex(0);
+    setGuidedDemoAutoPlay(false);
+    setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[0]));
+    applyGuidedDemoStep(0);
+  };
+
+  const moveGuidedDemo = (delta) => {
+    const nextIndex = Math.min(Math.max(guidedDemoStepIndex + delta, 0), guidedDemoSteps.length - 1);
+    setGuidedDemoStepIndex(nextIndex);
+    setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[nextIndex]));
+    applyGuidedDemoStep(nextIndex);
+  };
+
+  const jumpGuidedDemo = (index) => {
+    setGuidedDemoStepIndex(index);
+    setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[index]));
+    applyGuidedDemoStep(index);
+  };
+
+  const toggleGuidedDemoAutoPlay = () => {
+    if (!guidedDemoOpen) {
+      setGuidedDemoOpen(true);
+      setGuidedDemoStepIndex(0);
+      applyGuidedDemoStep(0);
+    }
+    setGuidedDemoRunActions(false);
+    setDemoDirectorPanelMinimized(false);
+    setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[guidedDemoStepIndex]));
+    setGuidedDemoAutoPlay(prev => !prev);
+  };
+
+  const startFullGuidedDemo = () => {
+    setGuidedDemoOpen(true);
+    setGuidedDemoRunActions(true);
+    setGuidedDemoAutoPlay(true);
+    setDemoDirectorPanelMinimized(true);
+    saveAiConfig({ processing_mode: 'ai', enabled: true });
+    setGuidedDemoStepIndex(0);
+    setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[0]));
+    applyGuidedDemoStep(0);
+  };
 
   const defaultWorkbenchScope = { database: '', schema: '', type: 'TABLE', table: '', column: '' };
   const [appScopes, setAppScopes] = useState({
@@ -733,12 +1418,14 @@ function App() {
 
   // Utility copy ref
   const [copiedQuery, setCopiedQuery] = useState('');
+  const [demoHoldChatSql, setDemoHoldChatSql] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    if (demoHoldChatSql) return;
     // Scroll to bottom of chat
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  }, [chatMessages, demoHoldChatSql]);
 
   async function loadChatSamples(dbName, schemaName, tableName) {
     try {
@@ -888,6 +1575,9 @@ function App() {
         body: JSON.stringify(connectionConfig)
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || 'Connection test failed.');
+      }
       if (data.success) {
         setConnectionStatus({
           status: 'connected',
@@ -897,35 +1587,27 @@ function App() {
         setConnectionModalOpen(false);
         loadDatabases(); // Fetch database scoping list on connection load
       } else {
-        if (data.mode && data.mode.endsWith('_FALLBACK')) {
-          setConnectionStatus({
-            status: 'connected',
-            message: data.message,
-            mode: data.mode
-          });
-          setConnectionModalOpen(false);
-          loadDatabases(); // Fetch database scoping list for fallback engine
-        } else {
-          setConnectionStatus({
-            status: 'disconnected',
-            message: data.message,
-            mode: 'MOCK_FALLBACK'
-          });
-        }
+        setConnectionStatus({
+          status: 'disconnected',
+          message: data.message || 'Connection test failed.',
+          mode: data.mode || connectionConfig.platform
+        });
       }
-    } catch {
+    } catch (err) {
       setConnectionStatus({
         status: 'disconnected',
-        message: 'Could not connect to FastAPI server. Ensure backend is running.',
+        message: err.message || 'Could not connect to FastAPI server. Ensure backend is running.',
         mode: 'OFFLINE'
       });
     }
   };
 
   // Send message to Copilot chat
-  const handleSendChatMessage = async (textToSend) => {
+  const handleSendChatMessage = async (textToSend, contextOverride = null, modeOverride = null) => {
     const text = textToSend || currentMessage;
     if (!text.trim()) return;
+    const requestContext = contextOverride || { database: activeDb, schema: activeSchema, table: activeTable || null };
+    const requestMode = modeOverride || aiConfig.processing_mode;
 
     if (!textToSend) {
       setCurrentMessage('');
@@ -933,18 +1615,18 @@ function App() {
 
     // Add user message
     setChatMessages(prev => [...prev, { sender: 'user', text }]);
-    setChatMessages(prev => [...prev, { sender: 'ai', text: aiConfig.processing_mode === 'compare' ? 'Running Native and AI pipelines side by side...' : 'Processing your request with Data Pilot AI...', loading: true }]);
+    setChatMessages(prev => [...prev, { sender: 'ai', text: requestMode === 'compare' ? 'Running Native and AI pipelines side by side...' : 'Processing your request with Data Pilot AI...', loading: true }]);
 
     try {
-      const endpoint = aiConfig.processing_mode === 'compare' ? '/api/chat/compare' : '/api/chat';
+      const endpoint = requestMode === 'compare' ? '/api/chat/compare' : '/api/chat';
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: text,
-          database: activeDb,
-          schema_name: activeSchema,
-          table_name: activeTable || null
+          database: requestContext.database,
+          schema_name: requestContext.schema,
+          table_name: requestContext.table || null
         })
       });
       const data = await res.json();
@@ -993,9 +1675,10 @@ function App() {
     if (!numericCols.length) return { type: 'none' };
     const x = labelCols[0] || columns.find(col => col !== numericCols[0]) || columns[0];
     const y = numericCols[0];
+    const series = labelCols.find(col => col !== x) || '';
     const loweredX = String(x).toLowerCase();
     const type = loweredX.includes('date') || loweredX.includes('month') || loweredX.includes('time') ? 'line' : 'bar';
-    return { type, x, y };
+    return { type, x, y, series };
   };
 
   const renderReportChart = () => {
@@ -1005,6 +1688,7 @@ function App() {
     if (chartType === 'none' || !inferred.x || !inferred.y) {
       return <div className="empty-state">No numeric column was found for charting this result set.</div>;
     }
+    if (chartType === 'line' && inferred.series) return renderReportMultiSeriesLineChart(reportData.data, inferred.x, inferred.y, inferred.series);
     if (chartType === 'line') return renderReportLineChart(reportData.data, inferred.x, inferred.y);
     return renderReportBarChart(reportData.data, inferred.x, inferred.y);
   };
@@ -1077,7 +1761,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `${askDatasetQuestion}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain English.`,
+          message: `${askDatasetQuestion}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain native language.`,
           database: activeDb,
           schema_name: activeSchema,
           table_name: activeTable || null
@@ -2007,6 +2691,528 @@ function App() {
     setWorkbenchLoading(prev => ({ ...prev, queryLog: false }));
   };
 
+  const setDemoActiveContext = (context) => {
+    setActiveDb(context.database);
+    setActiveSchema(context.schema);
+    setActiveTable(context.table);
+    setActiveType('TABLE');
+    loadTables(context.database, context.schema, 'TABLE')
+      .then(() => setActiveTable(context.table))
+      .catch(err => console.error('Demo table option load failed:', err));
+  };
+
+  const setDemoWorkbenchScope = (context = demoIncidentContext) => {
+    setDemoActiveContext(context);
+    setAppScopes(prev => ({
+      ...prev,
+      tableDetails: { ...prev.tableDetails, database: context.database, schema: context.schema, type: 'TABLE', table: context.table, column: '' },
+      profiler: { ...prev.profiler, database: context.database, schema: context.schema, type: 'TABLE', table: context.table, column: '' },
+      search: { ...prev.search, database: demoIncidentContext.database, schema: demoIncidentContext.schema, query: 'incident', tableFilter: 'sla', dataType: '' },
+      anomaly: { ...prev.anomaly, database: demoIncidentContext.database, schema: demoIncidentContext.schema, type: 'TABLE', table: demoIncidentContext.table, column: demoIncidentContext.anomalyColumn },
+      freshness: { ...prev.freshness, database: demoIncidentContext.database, schema: demoIncidentContext.schema, type: 'TABLE', table: demoIncidentContext.table, column: demoIncidentContext.dateColumn, expectedFrequency: 'daily', frequency: '' }
+    }));
+  };
+
+  const getDemoAskDatasetFallbackSql = () => `SELECT
+  CARD_BRAND,
+  COUNT(*) AS CARD_COUNT,
+  ROUND(AVG(TRY_TO_NUMBER(REGEXP_REPLACE(CREDIT_LIMIT, '[^0-9.-]', ''))), 2) AS AVG_CREDIT_LIMIT
+FROM KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA
+WHERE HAS_CHIP = TRUE
+GROUP BY CARD_BRAND
+ORDER BY AVG_CREDIT_LIMIT DESC
+LIMIT 100`;
+
+  const getDemoReportFallbackSql = () => `SELECT
+  TO_VARCHAR(DATE_TRUNC('MONTH', TRY_TO_DATE(ACCT_OPEN_DATE, 'MM/YYYY')), 'YYYY-MM') AS ACCOUNT_OPEN_MONTH,
+  COUNT(*) AS CARDS_OPENED
+FROM KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA
+WHERE TRY_TO_DATE(ACCT_OPEN_DATE, 'MM/YYYY') >= DATEADD(YEAR, -10, CURRENT_DATE())
+GROUP BY ACCOUNT_OPEN_MONTH
+ORDER BY ACCOUNT_OPEN_MONTH
+LIMIT 100`;
+
+  const runDemoChat = async (question) => {
+    setDemoActiveContext(demoFinanceContext);
+    setDemoHoldChatSql(false);
+    setCurrentMessage('');
+    setChatMessages(prev => [
+      ...prev.filter(msg => !msg.demoIntro),
+      { sender: 'ai', text: `Demo context: ${demoContextLabel(demoFinanceContext)}`, demoIntro: true }
+    ]);
+    await handleSendChatMessage(question, demoFinanceContext, 'ai');
+    setDemoHoldChatSql(true);
+    setGuidedDemoActionStatus('Holding generated SQL for the walkthrough...');
+    const sqlBlock = await waitForDemoChatSqlBlock(9000);
+    if (sqlBlock) {
+      sqlBlock.classList.add('demo-active-sql-block');
+      sqlBlock.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      await waitForDemo(900);
+      focusDemoDirectorTarget('.demo-active-sql-block', 'Generated SQL');
+      await waitForDemo(6200);
+      sqlBlock.classList.remove('demo-active-sql-block');
+    } else {
+      await waitForDemo(4200);
+    }
+    setDemoHoldChatSql(false);
+  };
+
+  const runDemoAskDataset = async (question, context = demoIncidentContext) => {
+    setDemoActiveContext(context);
+    setAskDatasetQuestion(question);
+    setAskDatasetLoading(true);
+    setAskDatasetResult(null);
+    setAskDatasetCompareResult(null);
+    setAskDatasetSql('');
+    setAskDatasetExplanation('');
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${question}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain native language.`,
+          database: context.database,
+          schema_name: context.schema,
+          table_name: context.table
+        })
+      });
+      const generated = await res.json();
+      if (!generated.sql) {
+        const fallbackSql = getDemoAskDatasetFallbackSql();
+        setAskDatasetSql(fallbackSql);
+        setAskDatasetExplanation('Demo fallback SQL groups chip-enabled cards by brand and calculates average credit limit after cleaning currency-formatted values.');
+        setAskDatasetTitle(question.slice(0, 80) || 'Dataset Answer');
+        await waitForDemo(2800);
+        setAskDatasetResult(await executeSqlWithLimit(fallbackSql));
+        return;
+      }
+      setAskDatasetSql(generated.sql);
+      setAskDatasetExplanation(generated.reply || 'The generated SQL answers the selected dataset question using the current database context.');
+      setAskDatasetTitle(question.slice(0, 80) || 'Dataset Answer');
+      await waitForDemo(2800);
+      const executed = await executeSqlWithLimit(generated.sql);
+      if (executed?.success) {
+        setAskDatasetResult(executed);
+      } else {
+        const fallbackSql = getDemoAskDatasetFallbackSql();
+        setAskDatasetSql(fallbackSql);
+        setAskDatasetExplanation('The demo recovered with a metadata-aware query that cleans CREDIT_LIMIT as a currency string before averaging it by card brand.');
+        setAskDatasetResult(await executeSqlWithLimit(fallbackSql));
+      }
+      await refreshAiUsage();
+    } catch (err) {
+      setAskDatasetResult({ success: false, error: err.message || 'Demo Ask Dataset failed.' });
+    } finally {
+      setAskDatasetLoading(false);
+    }
+  };
+
+  const runDemoReport = async (prompt, context = demoIncidentContext) => {
+    setDemoActiveContext(context);
+    setReportPrompt(prompt);
+    setReportGenerating(true);
+    setReportData(null);
+    setReportSql('');
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `${prompt}\nReturn SQL suitable for a dashboard/report. Prefer grouped metrics and concise result sets.`,
+          database: context.database,
+          schema_name: context.schema,
+          table_name: context.table
+        })
+      });
+      const generated = await res.json();
+      if (generated.sql) {
+        setReportSql(generated.sql);
+        setReportTitle(prompt.slice(0, 72) || 'Generated Report');
+        await waitForDemo(2200);
+        const executed = await executeSqlWithLimit(generated.sql);
+        if (executed?.success) {
+          setReportData(executed);
+        } else {
+          const fallbackSql = getDemoReportFallbackSql();
+          setReportSql(fallbackSql);
+          setReportTitle('Monthly Account Opening Trend');
+          setReportData(await executeSqlWithLimit(fallbackSql));
+        }
+        await refreshAiUsage();
+      } else {
+        const fallbackSql = getDemoReportFallbackSql();
+        setReportSql(fallbackSql);
+        setReportTitle('Monthly Account Opening Trend');
+        await waitForDemo(2200);
+        setReportData(await executeSqlWithLimit(fallbackSql));
+      }
+    } catch (err) {
+      setReportData({ success: false, error: err.message || 'Demo report generation failed.' });
+    } finally {
+      setReportGenerating(false);
+    }
+  };
+
+  const runDemoTableDetails = async () => {
+    setDemoWorkbenchScope();
+    setWorkbenchLoading(prev => ({ ...prev, tableDetails: true }));
+    const params = new URLSearchParams({ database: demoIncidentContext.database, schema: demoIncidentContext.schema, table: demoIncidentContext.table });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/table-details?${params.toString()}`);
+      const data = await res.json();
+      setTableDetailsData(data);
+      const columnNames = (data.columns || []).map(col => col.COLUMN_NAME);
+      patchWorkbenchOptions('tableDetails', { columns: columnNames, columnDetails: data.columns || [] });
+    } catch (err) {
+      console.error('Demo table details failed:', err);
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, tableDetails: false }));
+    }
+  };
+
+  const runDemoProfiler = async () => {
+    await runDemoTableDetails();
+    setWorkbenchLoading(prev => ({ ...prev, profiler: true }));
+    const params = new URLSearchParams({ database: demoIncidentContext.database, schema: demoIncidentContext.schema, table: demoIncidentContext.table });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/profile?${params.toString()}`);
+      setProfilerData(await res.json());
+    } catch (err) {
+      console.error('Demo profiler failed:', err);
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, profiler: false }));
+    }
+  };
+
+  const runDemoVolumeAnalyzer = async () => {
+    await runDemoTableDetails();
+    setVolumeAnalyzerColumn(demoIncidentContext.dateColumn);
+    setVolumeAnalyzerMode('event');
+    setVolumeAnalyzerTimeWindow('24h');
+    setVolumeAnalyzerGranularity('hour');
+    setWorkbenchLoading(prev => ({ ...prev, volumeAnalyzer: true }));
+    const params = new URLSearchParams({
+      database: demoIncidentContext.database,
+      schema: demoIncidentContext.schema,
+      table: demoIncidentContext.table,
+      column: demoIncidentContext.dateColumn,
+      field_mode: 'event',
+      time_window: '24h',
+      granularity: 'hour'
+    });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/volume-analyzer?${params.toString()}`);
+      setVolumeAnalyzerData(await res.json());
+    } catch (err) {
+      setVolumeAnalyzerData({ kind: 'date', summary: {}, rows: [], plot_data: { series: [] }, error: err.message || 'Volume analysis failed.' });
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, volumeAnalyzer: false }));
+    }
+  };
+
+  const runDemoInsights = async () => {
+    await runDemoProfiler();
+    setWorkbenchLoading(prev => ({ ...prev, insights: true }));
+    const params = new URLSearchParams({ database: demoIncidentContext.database, schema: demoIncidentContext.schema, table: demoIncidentContext.table });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/insights?${params.toString()}`);
+      setTableInsightsData(await res.json());
+    } catch (err) {
+      setTableInsightsData({ insights: [], error: err.message || 'Insight generation failed.' });
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, insights: false }));
+    }
+  };
+
+  const runDemoAnomaly = async () => {
+    setDemoWorkbenchScope();
+    setAnomalyTab('scan');
+    setAnomalyPlotType('auto');
+    setCustomAnomalyRule(prev => ({ ...prev, type: 'greater_than', value: '5000', secondValue: '', customWhere: '' }));
+    setWorkbenchLoading(prev => ({ ...prev, anomaly: true }));
+    const params = new URLSearchParams({ database: demoIncidentContext.database, schema: demoIncidentContext.schema, table: demoIncidentContext.table, column: demoIncidentContext.anomalyColumn });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/anomaly?${params.toString()}`);
+      setAnomalyData(await res.json());
+    } catch (err) {
+      console.error('Demo anomaly failed:', err);
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, anomaly: false }));
+    }
+  };
+
+  const runDemoFreshness = async () => {
+    setDemoWorkbenchScope();
+    setWorkbenchLoading(prev => ({ ...prev, freshness: true }));
+    const params = new URLSearchParams({
+      database: demoIncidentContext.database,
+      schema: demoIncidentContext.schema,
+      table: demoIncidentContext.table,
+      expected_frequency: 'daily',
+      date_column: demoIncidentContext.dateColumn
+    });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/freshness?${params.toString()}`);
+      setFreshnessData(await res.json());
+      await loadWorkbenchQueryLog();
+    } catch (err) {
+      console.error('Demo freshness failed:', err);
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, freshness: false }));
+    }
+  };
+
+  const runDemoSqlTuning = async () => {
+    const demoSql = `SELECT APP_NAME, COUNT(*) AS INCIDENT_COUNT, SUM(COST_IMPACT) AS TOTAL_COST
+FROM KAGGLE.INCIDENT_MGMT.INCIDENTS
+WHERE CREATED_DATE >= DATEADD(DAY, -90, CURRENT_DATE())
+GROUP BY APP_NAME
+ORDER BY TOTAL_COST DESC;`;
+    setSqlQuery(demoSql);
+    setAnalyzingCost(true);
+    setOptimizing(true);
+    setSqlCostAdvisor(null);
+    setSqlOptimization(null);
+    try {
+      const [costRes, optimizeRes] = await Promise.all([
+        fetch(`${API_BASE}/api/sql/cost-advisor`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: demoSql })
+        }),
+        fetch(`${API_BASE}/api/sql/optimize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: demoSql })
+        })
+      ]);
+      const [costData, optimizeData] = await Promise.all([safeJsonResponse(costRes), safeJsonResponse(optimizeRes)]);
+      setSqlCostAdvisor(normalizeSqlCostAdvisor(costData, costRes.ok));
+      setSqlOptimization(normalizeSqlOptimization(optimizeRes.ok ? optimizeData : {
+        explanation: optimizeData.detail || optimizeData.error || 'Optimization failed.',
+        optimized_sql: demoSql,
+      }));
+      await refreshAiUsage();
+    } catch (err) {
+      setSqlCostAdvisor({ success: false, error: err.message || 'Cost advisor failed.' });
+      setSqlOptimization(normalizeSqlOptimization({ explanation: err.message || 'Optimization failed.', optimized_sql: demoSql }));
+    } finally {
+      setAnalyzingCost(false);
+      setOptimizing(false);
+    }
+  };
+
+  const runDemoCatalogSearch = async () => {
+    setDemoWorkbenchScope();
+    setWorkbenchLoading(prev => ({ ...prev, search: true }));
+    const params = new URLSearchParams({
+      database: demoIncidentContext.database,
+      schema: demoIncidentContext.schema,
+      query: 'incident',
+      table_filter: 'sla'
+    });
+    try {
+      const res = await fetch(`${API_BASE}/api/workbench/search?${params.toString()}`);
+      const data = await res.json();
+      setSearchTableResults(data.tables || []);
+      setSearchColumnResults(data.columns || data.results || []);
+    } catch (err) {
+      console.error('Demo catalog search failed:', err);
+    } finally {
+      setWorkbenchLoading(prev => ({ ...prev, search: false }));
+    }
+  };
+
+  const buildDemoRagAnswer = () => ({
+    answer: {
+      title: 'INCIDENTS Table Documentation Summary',
+      sections: [
+        {
+          heading: 'Purpose',
+          bullets: [
+            'The INCIDENTS table tracks operational incidents across applications, including severity, status, ownership, SLA impact, root cause, and business impact.',
+            'It helps teams answer triage, reliability, cost-impact, and executive reporting questions without reading the full runbook.'
+          ]
+        },
+        {
+          heading: 'Important fields',
+          bullets: [
+            'INCIDENT_ID identifies each incident; APP_NAME groups incidents by business or platform application.',
+            'SEVERITY, STATUS, CREATED_DATE, SLA_BREACHED, ROOT_CAUSE, USERS_AFFECTED, and COST_IMPACT are the main fields for analysis.'
+          ]
+        },
+        {
+          heading: 'Fast questions users can ask',
+          bullets: [
+            'Which applications violate SLA the most?',
+            'What are the top recurring root causes?',
+            'How many critical incidents are still open?',
+            'Which incidents have the highest user or cost impact?'
+          ]
+        }
+      ]
+    },
+    citations: ['Demo table documentation summary'],
+    source_chunks: [],
+    retrieval_status: 'demo_summary',
+    ai_metadata: {
+      mode: 'demo_native_fallback',
+      model: 'Document Hub demo summary',
+      processing_time_ms: 0,
+      assumptions: 'Shown when live RAG does not return a usable answer during the walkthrough.'
+    }
+  });
+
+  const isUsableDemoRagResult = (data) => {
+    if (!data?.answer || data.retrieval_status === 'no_match') return false;
+    const answerText = typeof data.answer === 'string' ? data.answer : JSON.stringify(data.answer);
+    const lowered = answerText.toLowerCase();
+    return ![
+      'openai_api_key',
+      'api key',
+      'not configured',
+      'fallback reason',
+      'could not find relevant indexed content',
+      'no relevant indexed content'
+    ].some(term => lowered.includes(term));
+  };
+
+  const runDemoRagSearch = async () => {
+    const query = 'Read the table-related documentation and explain what the INCIDENTS table is used for, which fields are important, and what questions a user can answer quickly.';
+    setRagResult(null);
+    setLoadingRag(false);
+    setRagQuery('');
+    document.querySelector('.document-hub-page')?.scrollIntoView?.({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    focusDemoDirectorTarget('.document-hub-page .chat-input', 'Document Hub question');
+    await waitForDemo(900);
+
+    const words = query.split(' ');
+    for (let idx = 0; idx < words.length; idx += 6) {
+      setRagQuery(words.slice(0, idx + 6).join(' '));
+      await waitForDemo(260);
+    }
+    setRagQuery(query);
+    await waitForDemo(3200);
+
+    setLoadingRag(true);
+    focusDemoDirectorTarget('.document-hub-page .btn.btn-primary', 'Ask Document Hub');
+    await waitForDemo(900);
+    try {
+      await fetchRagDocuments();
+      const res = await fetch(`${API_BASE}/api/rag/search?query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setRagResult(isUsableDemoRagResult(data) ? data : buildDemoRagAnswer());
+      await refreshAiUsage();
+      await waitForDemo(900);
+      focusDemoDirectorTarget('.rag-result-card', 'Verified answer');
+      document.querySelector('.rag-result-card')?.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      await waitForDemo(2600);
+    } catch (err) {
+      console.error('Demo document search failed:', err);
+      setRagResult(buildDemoRagAnswer());
+      await waitForDemo(1800);
+    } finally {
+      setLoadingRag(false);
+    }
+  };
+
+  const executeGuidedDemoStep = async (index) => {
+    const step = guidedDemoSteps[index];
+    if (!step) return;
+    setGuidedDemoActionStatus(`Running: ${step.title}`);
+    showDemoDirectorCue(step, 'focus');
+    try {
+      if (step.tab === 'incidentCommand') {
+        await fetchIncidentCommandDashboard();
+        await runIncidentCommandQuestion(step.prompt || 'Which applications violate SLA the most?');
+        await waitForDemo(1200);
+        await slowScrollDemoTarget('.incident-query-results, .incident-compare-grid, .incident-query-card', { initialPause: 900, increments: [180, 220, 220], pause: 1300 });
+      } else if (step.tab === 'chat' && step.analystTab === 'chat' && step.title === 'AI Chat Copilot') {
+        await runDemoChat(step.prompt || 'How many debit cards have a chip, credit limit greater than 10000 dollars, and account opened within the last 10 years?');
+      } else if (step.tab === 'chat' && step.analystTab === 'ask') {
+        await runDemoAskDataset(step.prompt || 'Show average credit limit by card brand for cards with chip, and include the number of cards for each brand.', demoFinanceContext);
+        await slowScrollDemoTarget('.ask-dataset-results', { initialPause: 1900, increments: [90, 110, 110, 90], pause: 1700 });
+      } else if (step.tab === 'chat' && step.analystTab === 'report') {
+        await runDemoReport(step.prompt || 'Build a monthly account opening trend based on the card type', demoFinanceContext);
+        await slowScrollDemoTarget('.analyst-report-body', { initialPause: 1800, increments: [90, 110, 110], pause: 1600 });
+      } else if (step.tab === 'tableDetails' && step.tableDetailsTab === 'overview') {
+        await runDemoProfiler();
+      } else if (step.tab === 'tableDetails' && step.tableDetailsTab === 'volumeAnalyzer') {
+        await runDemoVolumeAnalyzer();
+        await slowScrollDemoTarget('.volume-analyzer-workspace', { initialPause: 1500, increments: [140, 190, 210, 170], pause: 1700, block: 'start' });
+      } else if (step.tab === 'tableDetails' && step.tableDetailsTab === 'insights') {
+        await runDemoInsights();
+      } else if (step.tab === 'anomaly') {
+        await runDemoAnomaly();
+        const ruleSql = `SELECT *
+FROM "KAGGLE"."INCIDENT_MGMT"."INCIDENTS"
+WHERE "COST_IMPACT" > 5000
+LIMIT 100;`;
+        await handleExecuteWorkbenchSql(ruleSql, 'Demo Custom Anomaly Rule', { inlineKey: 'demo-custom-anomaly-rule' });
+        await slowScrollDemoTarget('.anomaly-page', { initialPause: 1400, increments: [160, 180, 160], pause: 1400 });
+      } else if (step.tab === 'freshness') {
+        await runDemoFreshness();
+        await slowScrollDemoTarget('.freshness-detail-card, .freshness-result-table', { initialPause: 1300, increments: [150, 150, 120], pause: 1400 });
+      } else if (step.tab === 'sql') {
+        await runDemoSqlTuning();
+      } else if (step.tab === 'cost') {
+        await fetchCostDashboard(costDateRange, costStartDate, costEndDate);
+        setCostChartMode('trend');
+      } else if (step.tab === 'catalogSearch') {
+        await runDemoCatalogSearch();
+      } else if (step.tab === 'rag') {
+        await runDemoRagSearch();
+      } else if (step.tab === 'queryLog') {
+        await loadWorkbenchQueryLog();
+      } else if (step.tab === 'executionFootprint') {
+        await refreshAiUsage();
+      }
+      setGuidedDemoActionStatus(`Ready: ${step.title}`);
+      showDemoDirectorCue(step, 'result');
+    } catch (err) {
+      setGuidedDemoActionStatus(`Check manually: ${err.message || step.title}`);
+      setDemoDirectorResultCard(prev => ({
+        ...(prev || {}),
+        phase: 'error',
+        status: 'Manual check',
+        title: step.title,
+        value: err.message || 'The demo step needs a manual retry.'
+      }));
+    }
+  };
+
+  useEffect(() => {
+    if (!guidedDemoOpen || !guidedDemoAutoPlay) return undefined;
+    let cancelled = false;
+    const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms));
+    const runSequenceStep = async () => {
+      if (guidedDemoRunActions) {
+        await executeGuidedDemoStep(guidedDemoStepIndex);
+      }
+      const stepSeconds = getGuidedDemoStepSeconds(guidedDemoSteps[guidedDemoStepIndex]);
+      for (let remaining = stepSeconds; remaining > 0; remaining -= 1) {
+        if (cancelled) return;
+        setGuidedDemoRemaining(remaining);
+        await wait(1000);
+      }
+      if (cancelled) return;
+      const nextIndex = guidedDemoStepIndex + 1;
+      if (nextIndex >= guidedDemoSteps.length) {
+        setGuidedDemoAutoPlay(false);
+        setGuidedDemoRunActions(false);
+        setGuidedDemoActionStatus('Full demo completed.');
+        showDemoCompleteCard();
+        return;
+      }
+      setGuidedDemoStepIndex(nextIndex);
+      setGuidedDemoRemaining(getGuidedDemoStepSeconds(guidedDemoSteps[nextIndex]));
+      applyGuidedDemoStep(nextIndex);
+    };
+    runSequenceStep();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guidedDemoOpen, guidedDemoAutoPlay, guidedDemoRunActions, guidedDemoStepIndex]);
+
   const clearWorkbenchQueryLog = async () => {
     setWorkbenchLoading(prev => ({ ...prev, queryLog: true }));
     try {
@@ -2433,6 +3639,29 @@ function App() {
       );
     }
     if (typeof answer === 'object') {
+      if (answer.title && Array.isArray(answer.sections)) {
+        return (
+          <div className="rag-structured-answer">
+            <div className="mini-card-title" style={{ marginBottom: '10px' }}>{answer.title}</div>
+            <div className="rag-answer-list">
+              {answer.sections.map((section, idx) => (
+                <div key={`${section.heading || 'section'}-${idx}`} className="rag-structured-section">
+                  <strong>{section.heading || `Section ${idx + 1}`}</strong>
+                  {Array.isArray(section.bullets) ? (
+                    <ul>
+                      {section.bullets.map((bullet, bulletIdx) => (
+                        <li key={bulletIdx}>{String(bullet)}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="rag-answer-text">{String(section.text || section.summary || '')}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
       const normalizeGenericKey = (key) => key.toLowerCase().trim().replace(/\s+/g, '_');
       const keys = Object.keys(answer).map(normalizeGenericKey);
       if (keys.length && keys.every(key => ['latest_news', 'news', 'headlines', 'items', 'results'].includes(key))) {
@@ -2774,8 +4003,20 @@ function App() {
     );
   };
 
-  const renderAiTransparency = (metadata) => {
+  const renderAiTransparency = (metadata, options = {}) => {
     if (!metadata || Object.keys(metadata).length === 0) return null;
+    const rawMetadataError = String(metadata.error || '');
+    const safeMetadataError = rawMetadataError && /api[_\s-]?key|not configured|authentication|credential/i.test(rawMetadataError)
+      ? 'AI provider is not configured for this run, so Data Pilot used the native fallback path.'
+      : rawMetadataError;
+    const shouldHideFallbackReason = options.hideFallbackReason || (
+      metadata.operation === 'rag_answer'
+      && metadata.fallback_used
+      && /401|unauthorized|api[_\s-]?key|authentication|credential/i.test(rawMetadataError)
+    );
+    const transparencyNote = shouldHideFallbackReason
+      ? 'Document Hub used native retrieval and the indexed knowledge base for this answer.'
+      : (safeMetadataError ? `Fallback reason: ${safeMetadataError}` : metadata.assumptions);
     return (
       <div className="ai-transparency-card">
         <div className="ai-transparency-header">
@@ -2788,8 +4029,8 @@ function App() {
           <span>Tokens: {(metadata.prompt_tokens || 0) + (metadata.completion_tokens || 0)}</span>
           <span>{metadata.fallback_used ? 'Fallback used' : 'AI path'}</span>
         </div>
-        {(metadata.assumptions || metadata.error) && (
-          <p>{metadata.error ? `Fallback reason: ${metadata.error}` : metadata.assumptions}</p>
+        {transparencyNote && (
+          <p>{transparencyNote}</p>
         )}
       </div>
     );
@@ -2877,7 +4118,7 @@ function App() {
         const barWidth = Math.max(8, chartWidth / histogram.length * 0.68);
         const slot = chartWidth / histogram.length;
         return (
-          <div className="anomaly-plot-card">
+          <div className="anomaly-plot-card anomaly-chart-card">
             <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
               <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
               <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
@@ -2911,7 +4152,7 @@ function App() {
       ].filter(line => Number.isFinite(line.value));
 
       return (
-        <div className="anomaly-plot-card">
+        <div className="anomaly-plot-card anomaly-chart-card">
           <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
             <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
             <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
@@ -2969,7 +4210,7 @@ function App() {
         ...row
       }));
       return (
-        <div className="anomaly-plot-card">
+        <div className="anomaly-plot-card anomaly-chart-card">
           <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
             <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
             <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
@@ -3003,7 +4244,7 @@ function App() {
     });
 
     return (
-      <div className="anomaly-plot-card">
+      <div className="anomaly-plot-card anomaly-chart-card">
         <svg viewBox={`0 0 ${width} ${height}`} className="anomaly-svg">
           <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
           <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
@@ -3698,6 +4939,84 @@ function App() {
     );
   };
 
+  const renderReportMultiSeriesLineChart = (rows = [], xField, yField, seriesField) => {
+    const sourceRows = rows.slice(0, 220);
+    if (!sourceRows.length) return <div className="empty-state">No chart data available.</div>;
+    const width = 900;
+    const height = 330;
+    const pad = { left: 64, right: 34, top: 28, bottom: 70 };
+    const chartWidth = width - pad.left - pad.right;
+    const chartHeight = height - pad.top - pad.bottom;
+    const xValues = Array.from(new Set(sourceRows.map(row => String(getKeyValue(row, xField) || 'Unknown')))).sort();
+    const seriesValues = Array.from(new Set(sourceRows.map(row => String(getKeyValue(row, seriesField) || 'Unknown')))).slice(0, 6);
+    const colors = ['#00f2fe', '#a78bfa', '#34d399', '#f59e0b', '#fb7185', '#60a5fa'];
+    const lookup = new Map();
+    sourceRows.forEach(row => {
+      const x = String(getKeyValue(row, xField) || 'Unknown');
+      const series = String(getKeyValue(row, seriesField) || 'Unknown');
+      lookup.set(`${series}__${x}`, Number(getKeyValue(row, yField)) || 0);
+    });
+    const maxVal = Math.max(
+      ...seriesValues.flatMap(series => xValues.map(x => lookup.get(`${series}__${x}`) || 0)),
+      1
+    ) * 1.16;
+    const xStep = chartWidth / Math.max(xValues.length - 1, 1);
+    const xFor = (idx) => pad.left + idx * xStep;
+    const yFor = (value) => pad.top + chartHeight - (value / maxVal) * chartHeight;
+
+    return (
+      <div className="cost-chart-card report-dashboard-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} className="cost-chart-svg">
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = pad.top + chartHeight * (1 - ratio);
+            return (
+              <g key={ratio}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} className="chart-grid-line" />
+                <text x={pad.left - 10} y={y + 4} className="chart-label" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
+          })}
+          {seriesValues.map((series, seriesIdx) => {
+            const points = xValues.map((xValue, idx) => {
+              const value = lookup.get(`${series}__${xValue}`) || 0;
+              return { x: xFor(idx), y: yFor(value), value, label: xValue };
+            });
+            const linePath = `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')}`;
+            return (
+              <g key={series}>
+                <path d={linePath} fill="none" stroke={colors[seriesIdx % colors.length]} strokeWidth="3" />
+                {points.map((point, idx) => (
+                  idx % Math.ceil(points.length / 18 || 1) === 0 ? (
+                    <circle key={`${series}-${point.label}`} cx={point.x} cy={point.y} r="3.8" fill={colors[seriesIdx % colors.length]}>
+                      <title>{`${series}\n${point.label}\n${yField}: ${point.value}`}</title>
+                    </circle>
+                  ) : null
+                ))}
+              </g>
+            );
+          })}
+          {xValues.map((label, idx) => (
+            idx % Math.ceil(xValues.length / 9 || 1) === 0 ? (
+              <text key={label} x={xFor(idx)} y={height - 36} className="chart-label" textAnchor="middle">{label.slice(0, 10)}</text>
+            ) : null
+          ))}
+          <text x={width / 2} y={height - 12} className="chart-label" textAnchor="middle">{xField}</text>
+          <text x={18} y={height / 2} className="chart-label" textAnchor="middle" transform={`rotate(-90 18 ${height / 2})`}>{yField}</text>
+          <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} className="chart-axis-line" />
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} className="chart-axis-line" />
+          <g transform={`translate(${pad.left}, ${height - 24})`}>
+            {seriesValues.map((series, idx) => (
+              <g key={series} transform={`translate(${idx * 145}, 0)`}>
+                <circle cx="0" cy="-4" r="4" fill={colors[idx % colors.length]} />
+                <text x="10" y="0" className="chart-label">{series.slice(0, 18)}</text>
+              </g>
+            ))}
+          </g>
+        </svg>
+      </div>
+    );
+  };
+
   const renderReportLineChart = (rows = [], xField, yField) => {
     const sourceRows = rows.slice(0, 80);
     if (!sourceRows.length) return <div className="empty-state">No chart data available.</div>;
@@ -3938,8 +5257,9 @@ function App() {
         <nav className="sidebar-menu">
           <div 
             className={`sidebar-item ${activeTab === 'chat' ? 'active' : ''}`}
+            data-demo-tab="chat"
             onClick={() => setActiveTab('chat')}
-            title="Hybrid: Native SQL execution plus optional LLM for natural language, Compare, and repair."
+            title="Hybrid: Native SQL execution plus optional LLM for native language, Compare, and repair."
           >
             <MessageSquare size={16} />
             <span>AI Analyst Studio</span>
@@ -3947,6 +5267,7 @@ function App() {
           
           <div 
             className={`sidebar-item ${activeTab === 'sql' ? 'active' : ''}`}
+            data-demo-tab="sql"
             onClick={() => setActiveTab('sql')}
             title="Hybrid: Native cost advisor plus optional LLM explanation and optimization."
           >
@@ -3956,6 +5277,7 @@ function App() {
           
           <div 
             className={`sidebar-item ${activeTab === 'tableDetails' ? 'active' : ''}`}
+            data-demo-tab="tableDetails"
             onClick={() => setActiveTab('tableDetails')}
             title="Hybrid: Native metadata/profiling plus optional LLM summaries and descriptions."
           >
@@ -3965,6 +5287,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'catalogSearch' ? 'active' : ''}`}
+            data-demo-tab="catalogSearch"
             onClick={() => setActiveTab('catalogSearch')}
             title="Native: Python and Snowflake metadata search only."
           >
@@ -3974,6 +5297,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'anomaly' ? 'active' : ''}`}
+            data-demo-tab="anomaly"
             onClick={() => setActiveTab('anomaly')}
             title="Native: statistical anomaly rules and Snowflake SQL only."
           >
@@ -3983,6 +5307,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'freshness' ? 'active' : ''}`}
+            data-demo-tab="freshness"
             onClick={() => setActiveTab('freshness')}
             title="Native: freshness calculations and trend checks only."
           >
@@ -3992,6 +5317,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'cost' ? 'active' : ''}`}
+            data-demo-tab="cost"
             onClick={() => { setActiveTab('cost'); fetchCostDashboard(); }}
             title="Native: Snowflake cost metadata and query history analysis only."
           >
@@ -4001,6 +5327,7 @@ function App() {
 
           <div
             className={`sidebar-item ${activeTab === 'incidentCommand' ? 'active' : ''}`}
+            data-demo-tab="incidentCommand"
             onClick={() => { setActiveTab('incidentCommand'); fetchIncidentCommandDashboard(); }}
             title="Hybrid: enterprise incident KPIs, NL query, and Native-vs-AI comparison."
           >
@@ -4010,6 +5337,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'rag' ? 'active' : ''}`}
+            data-demo-tab="rag"
             onClick={() => { setActiveTab('rag'); fetchRagDocuments(); }}
             title="Hybrid: Native ingestion/retrieval plus optional LLM answer synthesis."
           >
@@ -4019,6 +5347,7 @@ function App() {
 
           <div 
             className={`sidebar-item ${activeTab === 'queryLog' ? 'active' : ''}`}
+            data-demo-tab="queryLog"
             onClick={() => { setActiveTab('queryLog'); loadWorkbenchQueryLog(); }}
             title="Native: persisted local query log only."
           >
@@ -4028,6 +5357,7 @@ function App() {
 
           <div
             className={`sidebar-item ${activeTab === 'executionFootprint' ? 'active' : ''}`}
+            data-demo-tab="executionFootprint"
             onClick={() => { setActiveTab('executionFootprint'); refreshAiUsage(); }}
           >
             <Activity size={16} />
@@ -4179,7 +5509,7 @@ function App() {
             </span>
           </div>
           <button 
-            className="btn btn-secondary btn-small" 
+            className="btn btn-secondary btn-small configure-connection-button" 
             style={{ width: '100%', marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'center' }}
             onClick={() => setConnectionModalOpen(true)}
           >
@@ -4208,7 +5538,7 @@ function App() {
                 {activeTab === 'executionFootprint' && 'Execution Footprint'}
               </h1>
               <p>
-                {activeTab === 'chat' && 'Chat with data and build report views from natural language.'}
+                {activeTab === 'chat' && 'Chat with data and build report views from native language.'}
                 {activeTab === 'sql' && 'Explain, identify inefficiencies, and auto-tune queries.'}
                 {activeTab === 'tableDetails' && 'Inspect, profile, and generate analyst-style insights for one selected table.'}
                 {activeTab === 'catalogSearch' && 'Find tables and columns by name, type, and table context.'}
@@ -4227,6 +5557,17 @@ function App() {
                 <div className={`current-app-mode ${currentExecutionApp.mode.toLowerCase()}`} title={currentExecutionApp.note}>
                   {currentExecutionApp.mode}
                 </div>
+              )}
+              {demoDirectorEnabled && (
+                <button
+                  className={`guided-demo-launch ${guidedDemoOpen ? 'active' : ''}`}
+                  type="button"
+                  onClick={startGuidedDemo}
+                  title="Open the recording-ready Demo Director."
+                >
+                  <Play size={12} />
+                  Demo Director
+                </button>
               )}
               <div className="processing-mode-badge">
                 <Sparkles size={12} />
@@ -4316,6 +5657,156 @@ function App() {
           )}
         </header>
 
+        {demoDirectorEnabled && guidedDemoOpen && demoDirectorPanelMinimized && (
+          <button
+            className="demo-director-hidden-control"
+            type="button"
+            onClick={() => setDemoDirectorPanelMinimized(false)}
+          >
+            Show Director
+          </button>
+        )}
+
+        {demoDirectorEnabled && guidedDemoOpen && guidedDemoStep && !demoDirectorPanelMinimized && (
+          <div className="guided-demo-panel">
+            <div className="guided-demo-header">
+              <div>
+                <span className="guided-demo-kicker">Demo Director</span>
+                <h3>{guidedDemoStep.title}</h3>
+              </div>
+              <div className="guided-demo-header-actions">
+                <button className="guided-demo-close" type="button" onClick={() => setDemoDirectorPanelMinimized(true)}>_</button>
+                <button
+                  className="guided-demo-close"
+                  type="button"
+                  onClick={() => {
+                    setGuidedDemoOpen(false);
+                    setGuidedDemoAutoPlay(false);
+                    setGuidedDemoRunActions(false);
+                    setDemoDirectorHighlight(null);
+                    setDemoDirectorResultCard(null);
+                  }}
+                >
+                  x
+                </button>
+              </div>
+            </div>
+            <div className="guided-demo-progress">
+              <span>{getGuidedDemoStepWindow(guidedDemoStepIndex)}</span>
+              <strong>{guidedDemoStepIndex + 1} / {guidedDemoSteps.length}</strong>
+            </div>
+            <div className="guided-demo-autoplay">
+              <button
+                className="btn btn-primary btn-small guided-demo-fullrun"
+                type="button"
+                onClick={startFullGuidedDemo}
+              >
+                <Sparkles size={12} /> Run Full Demo
+              </button>
+              <button
+                className={`btn btn-small ${guidedDemoAutoPlay ? 'btn-secondary' : 'btn-primary'}`}
+                type="button"
+                onClick={toggleGuidedDemoAutoPlay}
+              >
+                <Play size={12} /> {guidedDemoAutoPlay ? 'Pause' : 'Navigate Only'}
+              </button>
+              <div className="guided-demo-auto-duration">
+                <span>Auto pacing</span>
+                <strong>{guidedDemoCurrentSeconds}s</strong>
+              </div>
+              <span className={`guided-demo-countdown ${guidedDemoAutoPlay ? 'running' : ''}`}>
+                {guidedDemoAutoPlay ? `Next in ${guidedDemoRemaining}s` : 'Manual'}
+              </span>
+            </div>
+            <div className={`guided-demo-run-status ${guidedDemoRunActions ? 'running' : ''}`}>
+              <span>{guidedDemoRunActions ? 'Auto-executing demo actions' : 'Presenter controls execution'}</span>
+              <strong>{guidedDemoActionStatus || (guidedDemoRunActions ? 'Preparing full demo...' : 'Navigation mode')}</strong>
+            </div>
+            <div className="guided-demo-timer-bar" aria-hidden="true">
+              <span style={{ width: `${Math.max(0, Math.min(100, ((guidedDemoCurrentSeconds - guidedDemoRemaining) / guidedDemoCurrentSeconds) * 100))}%` }} />
+            </div>
+            <div className="guided-demo-track" aria-hidden="true">
+              {guidedDemoSteps.map((step, idx) => (
+                <button
+                  key={step.title}
+                  type="button"
+                  className={idx === guidedDemoStepIndex ? 'active' : idx < guidedDemoStepIndex ? 'done' : ''}
+                  onClick={() => jumpGuidedDemo(idx)}
+                  title={step.title}
+                />
+              ))}
+            </div>
+            <div className="guided-demo-body">
+              <div>
+                <span>Screen</span>
+                <p>{guidedDemoStep.screen}</p>
+              </div>
+              <div>
+                <span>Action</span>
+                <p>{guidedDemoStep.action}</p>
+              </div>
+              {guidedDemoStep.prompt && (
+                <div>
+                  <span>Sample Prompt / SQL</span>
+                  <pre>{guidedDemoStep.prompt}</pre>
+                </div>
+              )}
+              <div>
+                <span>Voice-over</span>
+                <p>{guidedDemoStep.narration}</p>
+              </div>
+              <div>
+                <span>Why It Matters</span>
+                <p>{guidedDemoStep.value}</p>
+              </div>
+            </div>
+            <div className="guided-demo-actions">
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => moveGuidedDemo(-1)} disabled={guidedDemoStepIndex === 0}>Back</button>
+              {guidedDemoStep.prompt && (
+                <button className="btn btn-secondary btn-small" type="button" onClick={() => handleCopy(guidedDemoStep.prompt)}>
+                  {copiedQuery === guidedDemoStep.prompt ? <Check size={12} /> : <Copy size={12} />} Copy Prompt
+                </button>
+              )}
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => setDemoDirectorPanelMinimized(true)}>Hide Panel</button>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => applyGuidedDemoStep(guidedDemoStepIndex)}>Open Step</button>
+              <button className="btn btn-primary btn-small" type="button" onClick={() => moveGuidedDemo(1)} disabled={guidedDemoStepIndex === guidedDemoSteps.length - 1}>Next</button>
+            </div>
+          </div>
+        )}
+
+        {demoDirectorEnabled && guidedDemoOpen && demoDirectorHighlight && (
+          <div
+            className="demo-director-highlight"
+            style={{
+              left: `${demoDirectorHighlight.left}px`,
+              top: `${demoDirectorHighlight.top}px`,
+              width: `${demoDirectorHighlight.width}px`,
+              height: `${demoDirectorHighlight.height}px`
+            }}
+            aria-hidden="true"
+          />
+        )}
+
+        {demoDirectorEnabled && guidedDemoOpen && (
+          <div
+            className="demo-director-pointer"
+            style={{ left: `${demoDirectorPointer.x}px`, top: `${demoDirectorPointer.y}px` }}
+            aria-hidden="true"
+          >
+            {demoDirectorPointer.label && <span>{demoDirectorPointer.label}</span>}
+          </div>
+        )}
+
+        {demoDirectorEnabled && guidedDemoOpen && demoDirectorResultCard && (
+          <div className={`demo-director-result-card ${demoDirectorResultCard.phase || ''}`}>
+            <h4>{demoDirectorResultCard.title}</h4>
+            {demoDirectorResultCard.value && <p>{demoDirectorResultCard.value}</p>}
+            <ul>
+              {(demoDirectorResultCard.bullets || []).map((bullet, idx) => <li key={idx}>{bullet}</li>)}
+            </ul>
+          </div>
+        )}
+
         {/* Tab Rendering Switch */}
         <div className={`tab-content ${activeTab === 'chat' ? 'chat-tab-content' : ''}`}>
           
@@ -4363,7 +5854,7 @@ function App() {
                       )}
 
                       {msg.sql && (
-                        <div className="code-container" style={{ marginTop: '12px', border: '1px solid var(--border-glow)' }}>
+                        <div className={`code-container ${demoDirectorEnabled ? 'demo-chat-sql-block' : ''}`} style={{ marginTop: '12px', border: '1px solid var(--border-glow)' }}>
                           <div className="code-header">
                             <span>GENERATED {connectionStatus.mode === 'MOCK' ? 'DATABASE' : connectionStatus.mode.replace('_FALLBACK', '')} SQL</span>
                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -4428,7 +5919,7 @@ function App() {
                       <div className="chat-input-container">
                         <input 
                           type="text" 
-                          placeholder="Ask a question in plain business English... (e.g. Show customer count by state)" 
+                          placeholder="Ask a question in your native language... (e.g. Show customer count by state)" 
                           className="chat-input"
                           value={currentMessage}
                           onChange={(e) => setCurrentMessage(e.target.value)}
@@ -4745,7 +6236,7 @@ function App() {
               <div className="sql-tuning-layout">
                 <div className="sql-input-column">
                   {/* Query Input */}
-                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div className="glass-card sql-input-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div className="glass-card-header">
                       <span className="glass-card-title"><Terminal size={16} /> SQL Input Console</span>
                       <div className="sql-action-row">
@@ -5633,7 +7124,7 @@ function App() {
           )}
 
           {activeTab === 'catalogSearch' && (
-            <div className="panel-body">
+            <div className="panel-body catalog-search-page">
               <div className="glass-card">
                 <div className="glass-card-header">
                   <span className="glass-card-title"><Layers size={16} /> Column / Table Search</span>
@@ -5723,7 +7214,7 @@ function App() {
           )}
 
           {activeTab === 'anomaly' && (
-            <div className="panel-body">
+            <div className="panel-body anomaly-page">
               <div className="glass-card anomaly-scope-card">
                 <div className="glass-card-header">
                   <span className="glass-card-title"><AlertTriangle size={16} /> Anomaly Detector</span>
@@ -6080,7 +7571,7 @@ function App() {
           )}
 
           {activeTab === 'queryLog' && (
-            <div className="panel-body">
+            <div className="panel-body query-log-page">
               <div className="glass-card">
                 <div className="glass-card-header">
                   <span className="glass-card-title"><Terminal size={16} /> Persisted Query Log</span>
@@ -6096,7 +7587,7 @@ function App() {
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
                   Stored locally in the backend workspace until you clear it.
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div className="query-log-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {workbenchQueryLog.length > 0 ? workbenchQueryLog.map((item, idx) => (
                     <div key={idx} className="mini-card">
                       <div className="code-header" style={{ alignItems: 'center', gap: '12px' }}>
@@ -6113,7 +7604,7 @@ function App() {
           )}
 
           {activeTab === 'executionFootprint' && (
-            <div className="panel-body">
+            <div className="panel-body execution-footprint-page">
               <div className="glass-card execution-overview-card">
                 <div className="glass-card-header">
                   <span className="glass-card-title"><Activity size={16} /> Execution Footprint</span>
@@ -7123,7 +8614,7 @@ function App() {
 
           {/* Document Hub */}
           {activeTab === 'rag' && (
-            <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', alignItems: 'start' }}>
+            <div className="panel-body document-hub-page" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', alignItems: 'start' }}>
               <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span className="glass-card-title"><HelpCircle size={16} /> Document Hub</span>
@@ -7165,7 +8656,7 @@ function App() {
                 {ragResult && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', borderTop: '1px solid var(--border-light)', paddingTop: '20px' }}>
                     {/* Citations and Answer */}
-                    <div className="glass-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
+                    <div className="glass-card rag-result-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                         <Sparkles size={14} color="var(--accent-cyan)" />
                         <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--accent-cyan)' }}>Verified Answer</span>
@@ -7625,7 +9116,7 @@ function App() {
             <div className="form-group" style={{ marginBottom: '14px' }}>
               <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Database Platform</label>
               <select 
-                className="form-input" 
+                className="form-input database-platform-select" 
                 value={connectionConfig.platform}
                 onChange={(e) => {
                   const plat = e.target.value;
@@ -7658,7 +9149,7 @@ function App() {
                 <div className="form-group">
                   <label>Authentication Method</label>
                   <select 
-                    className="form-input" 
+                    className="form-input snowflake-auth-method-select" 
                     value={connectionConfig.auth_method}
                     onChange={(e) => setConnectionConfig({ 
                       ...connectionConfig, 
@@ -7766,6 +9257,25 @@ function App() {
                     />
                   </div>
                 </div>
+              </div>
+            )}
+
+            {connectionStatus.message && (
+              <div
+                className={`connection-test-status ${connectionStatus.status}`}
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${connectionStatus.status === 'connected' ? 'rgba(0,224,150,0.35)' : connectionStatus.status === 'connecting' ? 'rgba(0,242,254,0.35)' : connectionStatus.status === 'disconnected' ? 'rgba(169,184,216,0.22)' : 'rgba(255,82,100,0.35)'}`,
+                  background: connectionStatus.status === 'connected' ? 'rgba(0,224,150,0.08)' : connectionStatus.status === 'connecting' ? 'rgba(0,242,254,0.08)' : connectionStatus.status === 'disconnected' ? 'rgba(255,255,255,0.035)' : 'rgba(255,82,100,0.08)',
+                  color: connectionStatus.status === 'connected' ? 'var(--accent-green)' : connectionStatus.status === 'connecting' ? 'var(--accent-cyan)' : connectionStatus.status === 'disconnected' ? 'var(--text-secondary)' : 'var(--accent-red)',
+                  fontSize: '12px',
+                  lineHeight: 1.45
+                }}
+              >
+                <strong>{connectionStatus.status === 'connecting' ? 'Testing connection' : connectionStatus.status === 'connected' ? 'Connection ready' : connectionStatus.status === 'disconnected' ? 'Connection yet to be established' : 'Connection failed'}</strong>
+                <div style={{ color: 'var(--text-secondary)', marginTop: '4px', wordBreak: 'break-word' }}>{connectionStatus.message}</div>
               </div>
             )}
 

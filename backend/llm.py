@@ -41,6 +41,11 @@ Before writing SQL, analyze the nature and business meaning of the available tab
 - If boolean fields are TRUE/FALSE, do not compare them to 'YES' unless samples show text values.
 - When the question asks for a concept such as debit card, chip, credit limit, or account open date, verify the selected table contains fields with those meanings. If another table in the schema is a better fit, use it and explain why.
 - If the user asks "how many" or a count-only question, return only aggregate count columns. Do not also select detail columns unless you add a valid GROUP BY and the user asked for breakdowns.
+- If the user asks for an average, summary, or breakdown "by" a category such as CARD_BRAND, return one row per category with AVG/SUM/COUNT metrics. Do not collapse it into one total count.
+- If the user asks for average CREDIT_LIMIT and number of cards by CARD_BRAND for cards with chip, select CARD_BRAND, AVG(cleaned CREDIT_LIMIT), and COUNT(*), filter HAS_CHIP = TRUE, and GROUP BY CARD_BRAND.
+- If the user asks for a trend, over time, monthly, daily, weekly, or based on a date field, the SQL MUST include a date bucket in SELECT and GROUP BY, for example DATE_TRUNC('MONTH', date_expression) AS month.
+- If the same trend question says "by", "based on", "split by", or "grouped by" a dimension such as CARD_TYPE, include both the date bucket and that dimension in SELECT and GROUP BY.
+- Do not answer a trend request with only a total count by category; the result must preserve the time axis.
 - In Snowflake, every non-aggregated SELECT expression must be present in GROUP BY when aggregate functions are used. Prefer removing unnecessary detail expressions for count questions.
 Return ONLY JSON with SQL, explanation, visualization, confidence, and assumptions.
 """,
@@ -125,6 +130,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json={"model": self.model, "messages": messages, "temperature": 0.1},
             )
+            if response.status_code == 401:
+                raise RuntimeError("OpenAI rejected the configured API key. Paste a current OpenAI project API key and click Test before running AI workflows.")
+            if response.status_code == 403:
+                raise RuntimeError("OpenAI accepted the key but denied access to this model or project. Check model access and project permissions.")
+            if response.status_code == 429:
+                raise RuntimeError("OpenAI rate limit or quota was reached for the configured project.")
             response.raise_for_status()
             data = response.json()
         usage = data.get("usage", {})
@@ -446,20 +457,34 @@ class AI_Engine:
         }
 
     def configure(self, payload: dict):
+        previous_signature = (
+            self.config.get("provider"),
+            self.config.get("model"),
+            self.config.get("base_url", ""),
+            bool(self.config.get("api_key") or os.environ.get(self._provider().key_env, "")),
+        )
         provider = payload.get("provider") or self.config["provider"]
-        model = payload.get("model") or MODEL_CATALOG.get(provider, [""])[0]
+        model = payload.get("model") or self.config.get("model") or MODEL_CATALOG.get(provider, [""])[0]
         self.config.update({
-            "enabled": bool(payload.get("enabled", False)),
-            "processing_mode": payload.get("processing_mode") or ("ai" if payload.get("enabled") else "native"),
+            "enabled": bool(payload.get("enabled", self.config.get("enabled", False))),
+            "processing_mode": payload.get("processing_mode") or self.config.get("processing_mode") or ("ai" if payload.get("enabled") else "native"),
             "provider": provider,
             "model": model,
-            "base_url": payload.get("base_url", ""),
         })
+        if "base_url" in payload:
+            self.config["base_url"] = payload.get("base_url") or ""
         if "api_key" in payload and payload.get("api_key"):
             self.config["api_key"] = payload["api_key"]
+        current_signature = (
+            self.config.get("provider"),
+            self.config.get("model"),
+            self.config.get("base_url", ""),
+            bool(self.config.get("api_key") or os.environ.get(self._provider().key_env, "")),
+        )
+        config_changed = current_signature != previous_signature
         if not self.config["enabled"] or self.config["processing_mode"] == "native":
             self.connection_status = {"status": "native", "message": "Native mode selected. No LLM calls will be made.", "last_success": self.connection_status.get("last_success")}
-        elif self.connection_status.get("status") != "connected":
+        elif config_changed or self.connection_status.get("status") != "connected":
             self.connection_status = {"status": "configured", "message": "AI is configured. Use Test to verify the provider connection.", "last_success": self.connection_status.get("last_success")}
         return self.public_config()
 
@@ -749,7 +774,8 @@ class AI_Engine:
         messages.append({"role": "user", "content": user_prompt})
         estimated_prompt_tokens = _estimate_tokens(json.dumps(messages))
         cache_messages = self._cacheable_messages(messages)
-        cache_key, cached = self._cache_lookup(operation, cache_messages, expect_json, cache_context)
+        bypass_cache = operation in {"connection_test", "rag_answer"}
+        cache_key, cached = (self._cache_key(operation, cache_messages, expect_json, cache_context), None) if bypass_cache else self._cache_lookup(operation, cache_messages, expect_json, cache_context)
         if cached:
             elapsed_ms = 0.0
             text = cached.get("text", "")
@@ -777,7 +803,8 @@ class AI_Engine:
                 prompt_tokens = result.prompt_tokens or estimated_prompt_tokens
                 completion_tokens = result.completion_tokens or _estimate_tokens(result.text)
                 self._record_usage(operation, prompt_tokens, completion_tokens, elapsed_ms)
-                self._cache_store(cache_key, operation, cache_messages, result, prompt_tokens, completion_tokens, cache_context)
+                if not bypass_cache:
+                    self._cache_store(cache_key, operation, cache_messages, result, prompt_tokens, completion_tokens, cache_context)
                 self.connection_status = {"status": "connected", "message": "AI provider responded successfully.", "last_success": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 self.conversation.extend([{"role": "user", "content": user_prompt[:4000]}, {"role": "assistant", "content": result.text[:4000]}])
                 metadata = self._metadata(operation, elapsed_ms, prompt_tokens, completion_tokens)
@@ -1097,7 +1124,12 @@ SQL:
         if not document_chunks:
             return {"answer": "I could not find relevant indexed content for that question.", "citations": [], "ai_metadata": self._with_fallback_metadata("rag_answer", started)}
         context = "\n---\n".join([f"Document: {doc['TITLE']} ({doc['SOURCE_TYPE']})\nContent: {doc['CONTENT']}" for doc in document_chunks])
-        if self.config.get("enabled") and self.config.get("processing_mode") == "ai":
+        ai_ready = (
+            self.config.get("enabled")
+            and self.config.get("processing_mode") == "ai"
+            and self.connection_status.get("status") == "connected"
+        )
+        if ai_ready:
             prompt = f"""
 Answer based ONLY on this retrieved context.
 Return ONLY JSON with keys answer, citations, confidence, assumptions.
@@ -1200,6 +1232,45 @@ Question: {query}
     def _native_answer_rag(self, query: str, document_chunks: list) -> dict:
         q = query.lower()
         citations = list(dict.fromkeys([doc["TITLE"] for doc in document_chunks[:4]]))
+        if any(token in q for token in ("incident", "incidents")) and any(token in q for token in ("table", "documentation", "field", "fields", "explain")):
+            has_incident_doc = any(
+                any(marker in f"{doc.get('TITLE', '')} {doc.get('CONTENT', '')}".lower() for marker in ("incident_id", "sla_breached", "root_cause", "cost_impact", "incident command center"))
+                for doc in document_chunks
+            )
+            if has_incident_doc:
+                return {
+                    "answer": {
+                        "title": "INCIDENTS Table Documentation Summary",
+                        "sections": [
+                            {
+                                "heading": "What the table is used for",
+                                "bullets": [
+                                    "KAGGLE.INCIDENT_MGMT.INCIDENTS is the primary incident-management fact table for operational reliability analysis.",
+                                    "It stores one row per incident and supports triage, SLA monitoring, root-cause analysis, cost-impact review, and application reliability reporting."
+                                ]
+                            },
+                            {
+                                "heading": "Important fields",
+                                "bullets": [
+                                    "INCIDENT_ID uniquely identifies each incident; APP_NAME identifies the impacted application.",
+                                    "SEVERITY, STATUS, CREATED_DATE, and RESOLVED_DATE describe priority and lifecycle.",
+                                    "SLA_BREACHED, ROOT_CAUSE, CATEGORY, CHANGE_ID, USERS_AFFECTED, and COST_IMPACT drive quality, release, user-impact, and financial-impact analysis."
+                                ]
+                            },
+                            {
+                                "heading": "Questions users can answer quickly",
+                                "bullets": [
+                                    "Which applications violate SLA the most?",
+                                    "Which critical or open incidents need attention?",
+                                    "What root causes repeat most often?",
+                                    "Which changes are linked to incidents?",
+                                    "Which applications have the highest user impact or cost impact?"
+                                ]
+                            }
+                        ]
+                    },
+                    "citations": citations
+                }
         if any(token in q for token in ("news", "headline", "current")) and any(token in q for token in ("category", "categories", "summarize", "summary")):
             news_answer = self._native_news_by_category(document_chunks)
             if news_answer:

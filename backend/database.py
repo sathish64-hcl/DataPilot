@@ -67,15 +67,43 @@ class DatabaseManager:
         self.active_platform = "SNOWFLAKE"
         self.use_mock = False
 
-    def connect_snowflake(self):
+    def connect_snowflake(self, fallback_to_mock: bool = False):
         try:
             if self.use_mock:
                 return True, "Using Mock Database"
+            if self.conn_snowflake is not None:
+                try:
+                    self.conn_snowflake.close()
+                except Exception:
+                    pass
+                self.conn_snowflake = None
             self.conn_snowflake = snowflake.connector.connect(**self.snowflake_config)
             return True, "Connected to Snowflake successfully!"
         except Exception as e:
-            self.use_mock = True
-            return False, f"Snowflake connection failed: {str(e)}. Falling back to Mock Mode."
+            self.conn_snowflake = None
+            if fallback_to_mock:
+                self.use_mock = True
+                return False, f"Snowflake connection failed: {str(e)}. Falling back to Mock Mode."
+            self.use_mock = False
+            return False, f"Snowflake connection failed: {str(e)}"
+
+    def _is_snowflake_auth_expired(self, error: Exception) -> bool:
+        err_text = str(error).lower()
+        return (
+            "390114" in err_text
+            or "authentication token has expired" in err_text
+            or "user must authenticate again" in err_text
+        )
+
+    def _refresh_snowflake_connection(self):
+        if self.conn_snowflake is not None:
+            try:
+                self.conn_snowflake.close()
+            except Exception:
+                pass
+            self.conn_snowflake = None
+        self.conn_snowflake = snowflake.connector.connect(**self.snowflake_config)
+        self.use_mock = False
 
     def set_redshift_config(self, host, port, database, user, password):
         self.redshift_config = {
@@ -139,7 +167,7 @@ class DatabaseManager:
                 return [row[1] for row in rows]
             except Exception as e:
                 print(f"Error fetching Snowflake databases: {e}")
-                return ["DEMO_DB"]
+                return []
         elif self.active_platform == "REDSHIFT" and self.conn_redshift:
             try:
                 cur = self.conn_redshift.cursor()
@@ -160,7 +188,7 @@ class DatabaseManager:
             except Exception as e:
                 print(f"Error fetching PostgreSQL databases: {e}")
                 return [self.postgresql_config.get("database", "POSTGRES_DB")]
-        return ["DEMO_DB"]
+        return []
 
     def get_schemas(self, db_name: str):
         if self.use_mock:
@@ -187,7 +215,7 @@ class DatabaseManager:
                 return [row[1] for row in rows]
             except Exception as e:
                 print(f"Error fetching Snowflake schemas: {e}")
-                return ["PUBLIC"]
+                return []
         elif self.active_platform == "REDSHIFT" and self.conn_redshift:
             try:
                 cur = self.conn_redshift.cursor()
@@ -208,7 +236,7 @@ class DatabaseManager:
             except Exception as e:
                 print(f"Error fetching PostgreSQL schemas: {e}")
                 return ["public"]
-        return ["PUBLIC"]
+        return []
 
     def get_tables(self, db_name: str, schema_name: str, table_type: str = "ALL"):
         target_type = table_type.upper()
@@ -314,7 +342,8 @@ class DatabaseManager:
             
         return {"success": False, "error": f"Unsupported active platform: {self.active_platform}"}
 
-    def execute_snowflake_query(self, query: str):
+    def execute_snowflake_query(self, query: str, retry_auth_expired: bool = True):
+        cur = None
         try:
             cur = self.conn_snowflake.cursor()
             cur.execute(query)
@@ -332,11 +361,30 @@ class DatabaseManager:
                 "source": "Snowflake"
             }
         except Exception as e:
+            if retry_auth_expired and self._is_snowflake_auth_expired(e):
+                try:
+                    self._refresh_snowflake_connection()
+                    retried = self.execute_snowflake_query(query, retry_auth_expired=False)
+                    if retried.get("success"):
+                        retried["reconnected"] = True
+                    return retried
+                except Exception as reconnect_error:
+                    return {
+                        "success": False,
+                        "error": f"Snowflake authentication expired and reconnect failed: {str(reconnect_error)}",
+                        "source": "Snowflake"
+                    }
             return {
                 "success": False,
                 "error": str(e),
                 "source": "Snowflake"
             }
+        finally:
+            if cur is not None:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
 
     def execute_redshift_query(self, query: str):
         try:
@@ -951,9 +999,13 @@ class DatabaseManager:
              
             ('Enterprise Data Governance and Owner Policies', 'Standard Operating Procedure', 
              'Tables containing PII (like customer email, phone, and name) must belong to the PUBLIC schema, and SELECT grants are strictly restricted to ROLE_BI_ANALYST and ROLE_MARKETING. Any access audits are logged in ACCOUNT_USAGE.GRANTS_TO_ROLES. Sathish is the primary owner and Data Architect for these core tables.', 
-             '{"author": "Data Governance Committee", "version": "3.0", "updated": "2025-11-12"}')
+             '{"author": "Data Governance Committee", "version": "3.0", "updated": "2025-11-12"}'),
+
+            ('Incident Command Center - INCIDENTS Table Documentation', 'Table Documentation',
+             'The KAGGLE.INCIDENT_MGMT.INCIDENTS table is the primary incident-management fact table for operational reliability analysis. It stores one row per incident and supports the Incident Command Center application. The table is used to answer questions about open incidents, critical incidents, SLA breaches, affected users, cost impact, root cause patterns, change-linked incidents, and application reliability trends. Important fields include INCIDENT_ID as the unique incident identifier, APP_NAME for the impacted application, SEVERITY for Critical High Medium Low priority, STATUS for Open In Progress Resolved lifecycle, CREATED_DATE for incident creation time, RESOLVED_DATE for closure time, SLA_BREACHED as the service-level breach flag, ROOT_CAUSE for the diagnosed reason, CATEGORY for Database ETL API Infrastructure or Application grouping, CHANGE_ID for release/change correlation, USERS_AFFECTED for business impact, and COST_IMPACT for estimated financial impact. Common questions include which applications violate SLA the most, which incidents are still open, which root causes repeat, what critical incidents need attention, which changes created incidents, and which applications have the highest user or cost impact. Recommended joins include APPLICATIONS on APP_ID for application ownership, EMPLOYEES on OWNER_ID for responsible teams, and CHANGE_REQUESTS on CHANGE_ID for deployment correlation.',
+             '{"author": "Data Pilot Studio", "version": "1.0", "updated": "2026-07-04", "database": "KAGGLE", "schema": "INCIDENT_MGMT", "table": "INCIDENTS", "tags": ["incident", "incidents", "table documentation", "incident command center", "sla", "root cause"]}')
         ]
-        cursor.executemany("INSERT INTO RAG_DOCUMENTS VALUES (?,?,?,?)", docs)
+        cursor.executemany("INSERT OR IGNORE INTO RAG_DOCUMENTS VALUES (?,?,?,?)", docs)
 
         # Seed Incident Logs
         incidents = [
@@ -1164,7 +1216,11 @@ class DatabaseManager:
                  
                 ('Enterprise Data Governance and Owner Policies', 'Standard Operating Procedure', 
                  'Tables containing PII (like customer email, phone, and name) must belong to the PUBLIC schema, and SELECT grants are strictly restricted to ROLE_BI_ANALYST and ROLE_MARKETING. Any access audits are logged in ACCOUNT_USAGE.GRANTS_TO_ROLES. Sathish is the primary owner and Data Architect for these core tables.', 
-                 '{"author": "Data Governance Committee", "version": "3.0", "updated": "2025-11-12"}')
+                 '{"author": "Data Governance Committee", "version": "3.0", "updated": "2025-11-12"}'),
+
+                ('Incident Command Center - INCIDENTS Table Documentation', 'Table Documentation',
+                 'The KAGGLE.INCIDENT_MGMT.INCIDENTS table is the primary incident-management fact table for operational reliability analysis. It stores one row per incident and supports the Incident Command Center application. The table is used to answer questions about open incidents, critical incidents, SLA breaches, affected users, cost impact, root cause patterns, change-linked incidents, and application reliability trends. Important fields include INCIDENT_ID as the unique incident identifier, APP_NAME for the impacted application, SEVERITY for Critical High Medium Low priority, STATUS for Open In Progress Resolved lifecycle, CREATED_DATE for incident creation time, RESOLVED_DATE for closure time, SLA_BREACHED as the service-level breach flag, ROOT_CAUSE for the diagnosed reason, CATEGORY for Database ETL API Infrastructure or Application grouping, CHANGE_ID for release/change correlation, USERS_AFFECTED for business impact, and COST_IMPACT for estimated financial impact. Common questions include which applications violate SLA the most, which incidents are still open, which root causes repeat, what critical incidents need attention, which changes created incidents, and which applications have the highest user or cost impact. Recommended joins include APPLICATIONS on APP_ID for application ownership, EMPLOYEES on OWNER_ID for responsible teams, and CHANGE_REQUESTS on CHANGE_ID for deployment correlation.',
+                 '{"author": "Data Pilot Studio", "version": "1.0", "updated": "2026-07-04", "database": "KAGGLE", "schema": "INCIDENT_MGMT", "table": "INCIDENTS", "tags": ["incident", "incidents", "table documentation", "incident command center", "sla", "root cause"]}')
             ]
             cursor.executemany("INSERT INTO RAG_DOCUMENTS VALUES (?,?,?,?)", docs)
             conn.commit()

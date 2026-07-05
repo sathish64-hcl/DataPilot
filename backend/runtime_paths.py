@@ -35,6 +35,7 @@ def data_path(name: str) -> Path:
     target = data_dir() / name
     if not target.exists():
         legacy_candidates = [
+            resource_root() / "data" / name,
             Path(__file__).resolve().parent / name,
             app_root() / "data" / name,
         ]

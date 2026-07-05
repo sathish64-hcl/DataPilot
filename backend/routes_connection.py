@@ -56,8 +56,7 @@ async def test_connection(config: ConnectionConfig):
         
     if success:
         return {"success": True, "message": msg, "mode": platform}
-    else:
-        return {"success": False, "message": msg, "mode": f"{platform}_FALLBACK"}
+    return {"success": False, "message": msg, "mode": platform}
 
 @router.post("/api/connection/use")
 async def use_session(req: UseSessionRequest):

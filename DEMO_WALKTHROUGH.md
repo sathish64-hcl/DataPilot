@@ -1,7 +1,7 @@
 # Data Pilot Studio Demo Script and Presentation Walkthrough
 
-Target length: 5 to 6 minutes  
-Audience: hackathon judges, executives, data platform leaders  
+Target length: 12 to 13 minutes raw capture, then trim to 5 to 7 minutes  
+Intended viewers: executives, data platform leaders, engineers, analysts, and business users  
 Demo style: product launch demo, not a code walkthrough
 
 ## 1. Complete Application Review
@@ -19,11 +19,14 @@ Visible application areas:
    - Execution Mode: Native, AI, Compare.
    - AI provider, model, API key, optional base URL, test connection.
    - AI mode is optional. Native mode works without an LLM.
+   - Spend-aware routing decides when native processing is enough and when an LLM adds value.
+   - Prompt Reuse Cache avoids repeated provider calls for repeated prompts.
+   - Token Budget Guardrails help prevent uncontrolled AI spend.
 
 3. AI Analyst Studio
-   - Chat tab: natural language questions against selected Snowflake tables.
+   - Chat tab: native language questions against selected Snowflake tables.
    - Ask Dataset tab: generates SQL, runs it, returns chart, explanation, and result preview.
-   - Report Builder tab: builds a visual report from natural language.
+   - Report Builder tab: builds a visual report from native language.
    - Compare mode: shows Native and AI generated SQL, results, explanations, metrics, and why AI is closer to the business intent.
 
 4. SQL Explainer and Performance Tuning
@@ -67,12 +70,12 @@ Visible application areas:
    - Snowflake-backed enterprise demo using `KAGGLE.INCIDENT_MGMT`.
    - Reads loaded Snowflake tables: applications, employees, change requests, incidents.
    - Dashboard KPIs, incident trend, priority distribution, root causes, top applications.
-   - Natural language triage and Compare mode.
+   - Native language triage and Compare mode.
 
 11. Document Hub
    - Ingests web pages, local text/file content, JSON, CSV, Excel-style content, and batch sources.
    - Supports crawl depth and source chunks.
-   - Answers questions using retrieval, with expandable source snippets.
+   - Uses rich RAG-based search to retrieve source chunks and answer with citations.
 
 12. Query Log
    - Persistent SQL execution history.
@@ -83,6 +86,14 @@ Visible application areas:
    - Shows which apps use Native logic, optional LLM, or hybrid mode.
    - Tracks accumulated LLM prompts, tokens, estimated cost, average response time, and recent events.
    - Persists until the user resets usage.
+   - Shows spend-aware decisions, prompt cache savings, and token budget status.
+
+14. Demo Director
+   - Presenter overlay built into the app.
+   - Walks through the recommended hackathon storyline step by step.
+   - Navigates to the correct app section and sub-tab.
+   - Shows action, sample prompt, voice-over, timing, value, and a result highlight card.
+   - Can run the full showcase automatically for recording, including prompts, queries, scans, and result focus.
 
 ## 2. Recommended Demo Sequence
 
@@ -91,24 +102,80 @@ Use one story: "A data operations leader wants to investigate Snowflake incident
 Suggested database context:
 
 - Database: `KAGGLE`
-- Schema: `INCIDENT_MGMT`
-- Main table: `INCIDENTS`
-- Date field: `CREATED_DATE`
-- Optional related tables: `APPLICATIONS`, `EMPLOYEES`, `CHANGE_REQUESTS`
+- AI Chat / Analyst table: `KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA`
+- Operational intelligence table: `KAGGLE.INCIDENT_MGMT.INCIDENTS`
+- Incident date field: `CREATED_DATE`
+- Incident related tables: `APPLICATIONS`, `EMPLOYEES`, `CHANGE_REQUESTS`
+
+Table strategy:
+
+- Use the finance cards table for broad AI analytics because it shows currency parsing, card attributes, and business-style questions.
+- Use the incident table for Table Intelligence, anomaly detection, freshness, SQL tuning, search, and operational quality because the date and cost fields support richer monitoring visuals.
+- End with Incident Command Center to show that Data Pilot can be customized into a client-specific application, not only generic table exploration.
 
 Timing:
 
 | Time | Section | Goal |
 | --- | --- | --- |
-| 0:00-0:35 | Open and position the product | Show Snowflake + AI configuration + execution modes |
-| 0:35-1:25 | Incident Command Center | Executive dashboard from Snowflake incident data |
-| 1:25-2:25 | AI Analyst Studio Compare | Natural language to SQL, chart, explanation, AI vs Native |
-| 2:25-3:15 | Table Intelligence Studio | Metadata, profile, volume, insights for the same table |
-| 3:15-3:55 | Anomaly + Freshness | Operational data quality checks |
-| 3:55-4:40 | SQL Explainer + Cost Analyzer | Query tuning and cost control |
-| 4:40-5:20 | Search + Document Hub | Discovery and RAG knowledge assistant |
-| 5:20-5:50 | Query Log + Execution Footprint | Auditability, token transparency, native vs AI clarity |
-| 5:50-6:00 | Closing | Position the value proposition |
+| 0:00-2:25 | Open and configure | Show app landscape, database platforms, Snowflake auth, session, AI config, and Native/AI/Compare modes |
+| 2:25-5:00 | AI Analyst Studio | AI Chat, Ask Dataset, and Report Builder on `KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA` |
+| 5:00-8:25 | Table Intelligence + Quality | Metadata, profile, volume, insights, anomaly, and freshness on `KAGGLE.INCIDENT_MGMT.INCIDENTS` |
+| 8:25-11:00 | SQL, Cost, Search, Documents | SQL tuning, Snowflake cost analytics, search, and a slower Document Hub question-to-answer moment |
+| 11:00-12:30 | Query Log + Execution Footprint | Auditability, token transparency, spend-aware AI, native vs AI clarity |
+| 12:30+ | Custom Client Application | Incident Command Center as the client-specific operational application |
+
+## Demo Director In The App
+
+Use this when recording or presenting live.
+
+1. Click `Demo Director` in the top-right header.
+2. The presenter panel opens in the lower-right corner.
+3. Click `Next` to move through the demo sequence.
+4. Each step automatically opens the relevant app section or sub-tab.
+5. Use `Copy Prompt` when a step includes a question or SQL.
+6. Use `Open Step` if you manually moved away and want to return to the current guided screen.
+7. Use the progress dots to jump directly to a section.
+8. Use `Run Full Demo` to let the app navigate and execute the showcase actions automatically.
+9. Use `Navigate Only` when you want the app to move through screens without running queries.
+10. Demo Director calculates pacing from the step narration, action, and prompt length.
+11. Watch the in-app pointer and focus rectangle: they move to the active control or result area.
+12. Use the result card as a compact summary when the output is ready.
+13. Close the panel when finished.
+
+Recommended usage:
+
+- Keep the panel open while recording.
+- For a cleaner recording, click `Run Full Demo`; the large panel minimizes automatically while the pointer, focus rectangle, and bottom-right information card remain visible.
+- Read the `Voice-over` text naturally, not word-for-word if it feels stiff.
+- Use `DEMO_VOICEOVER_SCRIPT.md` when creating a separate narrated audio track.
+- Run only the action needed for the current beat.
+- Avoid running every query live if time is tight; show generated SQL, chart, and explanation for the strongest sections.
+- `Run Full Demo` navigates between screens, preloads prompts, runs the important queries/actions, scrolls to result areas, minimizes the large presenter panel, and leaves the bottom-right information card visible.
+- `Navigate Only` is safer for rehearsal because it moves through the story without executing Snowflake queries.
+
+Demo Director steps included in the app:
+
+1. Application Landscape
+2. Database Settings
+3. Snowflake Session
+4. AI Configuration
+5. Native, AI, And Compare Modes
+6. AI Chat Copilot
+7. Query-To-Insight Loop
+8. Natural Language Report Builder
+9. Table Intelligence Studio
+10. Volume Analyzer
+11. Insight Generator
+12. Anomaly Detector
+13. Data Freshness
+14. Cost-Aware SQL Tuning
+15. Snowflake Cost Analyzer
+16. Search And Discovery
+17. Document Hub
+18. Persistent Query Log
+19. Execution Footprint And Spend-Aware AI
+20. Governance And AI Transparency
+21. Custom Client Application
 
 ## 3. Navigation Path For Every Click
 
@@ -116,14 +183,16 @@ Timing:
 
 1. Open the app at `http://127.0.0.1:5175/`.
 2. Confirm the Snowflake badge shows connected.
-3. In the left pane, expand Snowflake/session settings if collapsed.
-4. Select the intended Role and Warehouse.
-5. Open AI Configuration.
-6. Set Execution Mode to `Compare`.
-7. Choose the AI Provider and Model.
-8. Enter API key if not already configured.
-9. Click `Test Connection`.
-10. Confirm status shows connected or Compare ready.
+3. Click `Demo Director` in the top header if you want the presenter overlay, pointer, focus rectangle, and result cards.
+4. In the left pane, expand Snowflake/session settings if collapsed.
+5. Select the intended Role and Warehouse.
+6. Open AI Configuration.
+7. Set Execution Mode to `Compare`.
+8. Choose the AI Provider and Model.
+9. Enter API key if not already configured.
+10. Click `Test Connection`.
+11. Confirm status shows connected or Compare ready.
+12. Open `Execution Footprint` briefly before recording if you want to verify accumulated token usage is visible.
 
 ### Section 1: Incident Command Center
 
@@ -157,6 +226,8 @@ Timing:
 12. Show the guardrails below generated SQL:
    - `Semantic Table Resolver` maps business language to real tables and fields.
    - `SQL Validation Firewall` checks generated SQL against schema metadata.
+   - `Explainability Timeline` shows whether the query was generated, validated, repaired, cached, or executed.
+   - `Spend-Aware AI Engine` shows native-first routing, token savings, and why the model was or was not needed.
 13. Say:
    - `We do not execute AI SQL just because it looks correct. We validate it against real metadata first.`
 14. Optional firewall test:
@@ -257,12 +328,12 @@ ORDER BY TOTAL_COST DESC;
 6. Show matching SLA-related columns.
 7. Click generate SELECT for a table if available.
 8. Click `Document Hub`.
-9. Use a short pasted source or known URL.
+9. Use a short pasted source, table-related document, or known URL.
 10. Set crawl depth to `0` or `1`.
-11. Click ingest.
+11. Click ingest if adding a new source.
 12. Ask:
-    - `Summarize the key operational risks by category.`
-13. Show verified answer.
+    - `Read the table-related documentation and explain what the INCIDENTS table is used for, which fields are important, and what questions a user can answer quickly.`
+13. Show the table documentation answer.
 14. Expand source snippets only briefly.
 
 ### Section 8: Query Log and Execution Footprint
@@ -274,9 +345,10 @@ ORDER BY TOTAL_COST DESC;
 5. Click `Execution Footprint`.
 6. Show app-by-app Native, Hybrid, and LLM usage.
 7. Show accumulated prompts, tokens, estimated cost, average response time.
-8. Show `Prompt Reuse Cache`: entries, hits, misses, saved tokens, avoided cost, and last lookup.
-9. Show `Token Budget Guardrails`: budget, used tokens, remaining tokens, warning status, and blocked calls.
-10. Mention reset is user-controlled.
+8. Show Spend-Aware AI decisions: route, tokens avoided, cost avoided, and decision trace.
+9. Show `Prompt Reuse Cache`: entries, hits, misses, saved tokens, avoided cost, and last lookup.
+10. Show `Token Budget Guardrails`: budget, used tokens, remaining tokens, warning status, and blocked calls.
+11. Mention reset is user-controlled.
 
 ## 4. Business Questions For Every Screen
 
@@ -433,37 +505,29 @@ We do not just show generated SQL. We show why DataPilot trusted, blocked, cache
 
 ## 6. Full Voice-over Script
 
+The current Demo Director narration is maintained in `DEMO_VOICEOVER_SCRIPT.md`. Use that file as the source of truth for the recording script because it includes the latest flow: finance-table AI Chat, finance-table Ask Dataset and Report Builder, incident-table intelligence and quality checks, and Incident Command Center as the final custom client application.
+
 ### 0:00-0:35 - Opening and Configuration
 
 Screen: Data Pilot Studio home state with left sidebar visible.
 
 Action:
-Click AI Configuration, show Execution Mode, provider, model, and Test Connection status. Show Snowflake connected badge.
+Show the left navigation, open Database Settings, show database platform options, show Snowflake authentication methods, then show AI Configuration with Execution Mode, provider, model, and Test Connection status.
 
 Voice-over:
-"Welcome to Data Pilot Studio, an AI-powered enterprise data copilot for Snowflake. The goal is simple: let business and data teams ask questions, inspect metadata, analyze quality, optimize SQL, control cost, and understand where AI adds value. The platform is LLM-agnostic, so teams can use OpenAI, Azure OpenAI, Claude, Gemini, Snowflake Cortex, Ollama, or a custom enterprise endpoint. It also has a Native mode, so the application still works even when no model is configured. For this demo, I am using Compare mode, which runs Native and AI approaches side by side."
+"Welcome to Data Pilot Studio, an AI-powered enterprise data copilot for live data workflows. The left navigation brings analyst questions, SQL tuning, table intelligence, search, anomaly detection, freshness, cost analytics, document search, query history, AI usage governance, and client-specific applications into one workspace. Database settings are configured separately from AI settings. The database platform selector supports mock mode, Snowflake, Redshift, and PostgreSQL style targets. For this demo, Snowflake is used as the live connection, with authentication options for password, SSO external browser, and token-based access. The AI layer is provider-agnostic, and Compare mode runs Native and AI approaches side by side."
 
-### 0:35-1:25 - Incident Command Center
+### 2:25-5:00 - AI Analyst Studio
 
-Screen: Incident Command Center.
+Screen: AI Analyst Studio: Chat, Ask Dataset, then Report Builder.
 
 Action:
-Click Incident Command Center, click Refresh Dashboard, show KPIs and charts. Ask "Which applications violate SLA the most?"
+Select `KAGGLE`, `FINANCE_TRAN`, `FINANCE_CARDS_DATA`. In Chat, ask the debit-card/chip/credit-limit/account-open-date question and pause on the generated SQL. In Ask Dataset, ask for average credit limit by card brand for chip-enabled cards and card counts. In Report Builder, build a monthly account-opening trend based on card type.
 
 Voice-over:
-"First, here is a Snowflake-backed Incident Command Center. This is not a mock screen; it is reading the loaded Snowflake tables from KAGGLE.INCIDENT_MGMT. At the top, leaders see open incidents, critical issues, average resolution time, SLA compliance, and business cost. The charts show incident trends, priority distribution, root causes, and top impacted applications. Now I can ask a business question, not write SQL: which applications violate SLA the most? In Compare mode, Data Pilot shows the native deterministic answer and the AI-enhanced answer, including generated SQL, explanation, and business interpretation."
+"AI Analyst Studio starts with conversational analysis. The selected table is the finance cards table, and the question asks how many debit cards have chips, credit limits above ten thousand dollars, and accounts opened in the last ten years. The important point is that the AI inspects field meaning and storage format before writing SQL, including currency strings and date formats. Then Ask Dataset turns a second question into SQL, Snowflake results, a chart, and an explanation. Report Builder asks for a monthly account-opening trend by card type, preserving both the time axis and the category breakdown. This is the query-to-insight loop: SQL remains transparent, but the result becomes a story."
 
-### 1:25-2:25 - AI Analyst Studio
-
-Screen: AI Analyst Studio, Ask Dataset tab.
-
-Action:
-Select `KAGGLE`, `INCIDENT_MGMT`, `INCIDENTS`. Open Ask Dataset. Enter top critical incidents prompt. Run. Then open Report Builder and build monthly trend report.
-
-Voice-over:
-"Next is AI Analyst Studio. I select the Snowflake table once, then ask a question in plain English: show the top 10 applications by open critical incidents and total users affected. Data Pilot generates SQL, validates it against schema metadata, executes it in Snowflake, returns a result preview, creates a chart, and explains the answer. We do not execute AI SQL just because it looks correct. We validate it against real metadata first. This is the query-to-insight loop: Snowflake gives us the data, and Data Pilot turns it into a story. In Report Builder, I can ask for a monthly incident trend by severity and immediately get a visual report. This is designed for analysts who need answers quickly, but still want the generated SQL to remain transparent."
-
-### 2:25-3:15 - Table Intelligence Studio
+### 5:00-8:25 - Table Intelligence Studio And Quality
 
 Screen: Table Intelligence Studio.
 
@@ -473,7 +537,7 @@ Select `KAGGLE.INCIDENT_MGMT.INCIDENTS`, click Load Details, click Run Profile. 
 Voice-over:
 "Now I move from asking questions to understanding the table itself. Table Intelligence Studio combines catalog, profiler, volume analysis, and insight generation in one place. I can inspect columns, data types, nullable fields, sample rows, generated DDL, quick queries, and profile statistics. The profiler identifies null-heavy columns, empty columns, data quality checks, and column roles. The Volume Analyzer lets me choose the date field and whether the table behaves like batch or event data. It then shows throughput, peak patterns, and flagged volume anomalies. Finally, the Insight Generator moves the experience from data catalog to data analyst by surfacing trends, anomalies, correlations, KPIs, and likely sensitive fields."
 
-### 3:15-3:55 - Anomaly Detector and Data Freshness
+### 7:10-8:25 - Anomaly Detector and Data Freshness
 
 Screen: Anomaly Detector, then Data Freshness.
 
@@ -483,7 +547,7 @@ Run anomaly scan on `COST_IMPACT`. Switch chart types. Open Custom Rule, create 
 Voice-over:
 "For operational quality, Data Pilot includes targeted checks. In Anomaly Detector, I select the table and scan COST_IMPACT. Numeric fields use statistical outlier logic, text fields use rare value detection, and date fields use trend-based anomaly scoring. I can also define my own business rule, such as cost impact greater than 5000, and execute the generated SQL immediately. Data Freshness answers a different question: is this table current? I choose the date field, run the scan, and the app shows latest age, recent row volume, previous row volume, and freshness status."
 
-### 3:55-4:40 - SQL Explainer and Cost Analyzer
+### 8:25-9:45 - SQL Explainer and Cost Analyzer
 
 Screen: SQL Explainer / Tuning, then Cost Analyzer.
 
@@ -493,17 +557,17 @@ Paste incident cost SQL, click Analyze & Optimize SQL. Show Cost-Aware Advisor a
 Voice-over:
 "Data Pilot also helps before and after SQL execution. In SQL Explainer and Tuning, I paste a Snowflake query and run one combined analysis. The Cost-Aware Query Advisor estimates scan impact and suggests cheaper alternatives, while the AI Performance Optimization Report explains the query and recommends improvements. Then the Cost Analyzer shows the broader platform view: credit trends, warehouse spend, user spend, expensive queries, and cost recommendations. This makes performance and cost part of the same workflow instead of a separate after-the-fact exercise."
 
-### 4:40-5:20 - Search and Document Hub
+### 9:45-11:00 - Search and Document Hub
 
 Screen: Column / Table Search, then Document Hub.
 
 Action:
-Search `incident`, filter column results with `sla`, show generated SELECT. Open Document Hub, ingest a source, ask summary question, expand snippets briefly.
+Search `incident`, filter column results with `sla`, show generated SELECT. Open Document Hub, pause on the typed question first, then run the answer and show the verified answer with citation.
 
 Voice-over:
-"When users do not know where the data lives, Column and Table Search separates table matches from column matches. I can search for incident, then narrow the column results to SLA-related fields. This is useful in large Snowflake environments where a simple search can return too much noise. Document Hub adds a second knowledge layer. It can ingest web pages, pasted text, files, JSON, CSV, and batch sources, then answer questions using retrieved source snippets. This means Data Pilot can combine structured Snowflake data with unstructured operational knowledge."
+"When users do not know where the data lives, Column and Table Search separates table matches from column matches. I can search for incident, then narrow the column results to SLA-related fields. Document Hub adds a rich RAG-based knowledge layer. It ingests documentation, chunks and indexes it, retrieves the most relevant source context, generates a cited answer, and keeps supporting snippets available for review."
 
-### 5:20-5:50 - Query Log and Execution Footprint
+### 11:00-12:30 - Query Log and Execution Footprint
 
 Screen: Query Log, then Execution Footprint.
 
@@ -513,38 +577,39 @@ Open Query Log, show persisted queries. Open Execution Footprint, show app usage
 Voice-over:
 "Finally, Data Pilot is transparent. Query Log keeps a persistent history of executed SQL so users can review or rerun what happened. Explainability Timeline shows why a generated query was trusted, blocked, cached, repaired, or executed. Execution Footprint shows which apps are Native, which are Hybrid, and where LLM tokens are used. It also shows Prompt Reuse Cache savings and Token Budget Guardrails, so repeated prompts can avoid provider tokens and runaway usage can be blocked before it exceeds budget. Token usage, estimated cost, response time, and recent events are accumulated until the user resets them. This is important for enterprise adoption because AI usage should be visible, measurable, and controllable."
 
-### 5:50-6:00 - Closing
+### 12:30-13:15 - Custom Client Application And Closing
 
-Screen: Execution Footprint or Incident Command Center.
+Screen: Incident Command Center.
 
 Action:
-Return to Incident Command Center or leave Execution Footprint visible.
+Open Incident Command Center last, refresh the dashboard, ask `Which applications violate SLA the most?`, and show the operational dashboard/report.
 
 Voice-over:
-"Data Pilot Studio is more than a chatbot on top of Snowflake. It is a configurable AI data platform copilot: native execution when speed and reliability matter, AI execution when interpretation and generation matter, and Compare mode when teams want to prove the value of AI. That flexibility makes it portable across organizations, providers, and enterprise controls."
+"The final screen shows client-specific customization. Incident Command Center is built around operational incident-management data instead of a generic table browser. It reads Snowflake incident tables, shows domain KPIs, SLA risk, root causes, cost impact, trends, and natural-language triage. Final note: Data Pilot Studio is designed for teams that want AI in the data platform without giving up trust, control, or portability. It is not just a chatbot on top of Snowflake; it is an LLM-agnostic AI data platform copilot that combines live Snowflake execution, native reliability, governed AI, validated SQL, RAG-based knowledge search, and client-specific applications. The outcome is simple: faster answers, safer automation, clearer cost visibility, and a data experience that can adapt to the way each enterprise actually works."
 
 ## 7. Estimated Timing By Section
 
 | Section | Target |
 | --- | --- |
-| Opening and configuration | 35 seconds |
-| Incident Command Center | 50 seconds |
-| AI Analyst Studio | 60 seconds |
-| Table Intelligence Studio | 50 seconds |
-| Anomaly and Freshness | 40 seconds |
-| SQL Explainer and Cost Analyzer | 45 seconds |
-| Search and Document Hub | 40 seconds |
-| Query Log and Execution Footprint | 30 seconds |
-| Closing | 10 seconds |
-| Total | 5 minutes 40 seconds |
+| Opening, database, Snowflake session, AI config | Flexible |
+| AI Chat Copilot | Flexible |
+| Ask Dataset and Report Builder | Flexible |
+| Table Intelligence, Volume, Insights | Flexible |
+| Anomaly and Freshness | Flexible |
+| SQL Explainer and Cost Analyzer | Flexible |
+| Search and Document Hub | Flexible |
+| Query Log and Execution Footprint | Flexible |
+| Custom Client Application: Incident Command Center | Flexible |
+| Total | Record full flow, then trim during editing |
 
 ## 8. Final Presentation Tips
 
 1. Use Compare mode early.
-   - Judges should see the Native versus AI value clearly before the midpoint.
+   - Show the Native versus AI value clearly before the midpoint.
 
-2. Keep one data story.
-   - Use `INCIDENTS` across dashboard, AI, metadata, anomaly, freshness, SQL, and search. This makes the demo feel intentional.
+2. Keep two deliberate data stories.
+   - Use `KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA` for AI Analyst Studio because it shows business questions, currency parsing, date parsing, and report building.
+   - Use `KAGGLE.INCIDENT_MGMT.INCIDENTS` for table intelligence, anomaly, freshness, SQL tuning, search, Document Hub, and the final Incident Command Center.
 
 3. Do not over-scroll tables.
    - Show 5 to 10 rows, then move to charts and insights.
@@ -566,10 +631,10 @@ Voice-over:
 
 ## 9. Short Backup Script If You Need A 3 Minute Version
 
-"Data Pilot Studio is an LLM-agnostic Snowflake data copilot. It supports Native, AI, and Compare modes, so teams can use deterministic Python and SQL workflows, AI workflows, or run both side by side. I start in the Snowflake-backed Incident Command Center, where the dashboard reads from KAGGLE.INCIDENT_MGMT and summarizes open incidents, SLA compliance, root causes, and business cost. Then I ask which applications violate SLA the most, and Compare mode shows Native SQL versus AI-generated analysis.
+"Data Pilot Studio is an LLM-agnostic Snowflake data copilot. It supports Native, AI, and Compare modes, so teams can use deterministic Python and SQL workflows, AI workflows, or run both side by side. The demo starts with database settings, Snowflake authentication methods, Snowflake role and warehouse, and provider-agnostic AI configuration.
 
-In AI Analyst Studio, I ask a business question against the INCIDENTS table. Data Pilot generates Snowflake SQL, validates it against real metadata before execution, returns a chart, explains the answer, and shows the SQL transparently. We do not execute AI SQL just because it looks correct. In Table Intelligence Studio, I profile the same table, inspect metadata, view generated DDL, analyze volume patterns, and generate insights like trends, anomalies, correlations, and KPIs.
+In AI Analyst Studio, I ask a business question against KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA. Data Pilot generates Snowflake SQL, validates it against real metadata before execution, returns a chart, explains the answer, and shows the SQL transparently. We do not execute AI SQL just because it looks correct. In Table Intelligence Studio, I switch to KAGGLE.INCIDENT_MGMT.INCIDENTS, inspect metadata, profile the table, view generated DDL, analyze volume patterns, and generate insights like trends, anomalies, correlations, and KPIs.
 
-For operational quality, I run Anomaly Detector on COST_IMPACT and Data Freshness on CREATED_DATE. For performance, I paste SQL into SQL Explainer and get a cost-aware optimization report, then use Cost Analyzer to view warehouse and user credit trends. Column Search helps find tables and fields quickly, Document Hub answers questions from unstructured sources, Query Log keeps executed SQL history, and Execution Footprint shows exactly which apps used LLM tokens and how much they cost.
+For operational quality, I run Anomaly Detector on COST_IMPACT and Data Freshness on CREATED_DATE. For performance, I paste SQL into SQL Explainer and get a cost-aware optimization report, then use Cost Analyzer to view warehouse and user credit trends. Column Search helps find tables and fields quickly, Document Hub provides RAG-based search across table documentation and answers with citations, Query Log keeps executed SQL history, and Execution Footprint shows exactly which apps used LLM tokens and how much they cost.
 
-The result is not just a chatbot. It is a configurable enterprise data copilot for Snowflake, with AI where it helps, native execution where it matters, and transparency across cost, SQL, metadata, and usage."
+The final screen is Incident Command Center, a custom client-specific application built on the same platform foundation. Final note: Data Pilot Studio is designed for teams that want AI in the data platform without giving up trust, control, or portability. It is not just a chatbot on top of Snowflake; it is an LLM-agnostic AI data platform copilot that combines live Snowflake execution, native reliability, governed AI, validated SQL, RAG-based knowledge search, and client-specific applications. The outcome is simple: faster answers, safer automation, clearer cost visibility, and a data experience that can adapt to the way each enterprise actually works."

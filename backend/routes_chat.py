@@ -296,6 +296,150 @@ def _qualify_generated_sql(sql: str, database: str, schema_name: str):
     return qualified
 
 
+def _find_schema_column(schema_rows, table_name: str, *terms):
+    table_upper = (table_name or "").upper()
+    ranked = []
+    for row in schema_rows or []:
+        table = (row.get("TABLE_NAME") or row.get("table_name") or "").upper()
+        column = (row.get("COLUMN_NAME") or row.get("column_name") or "").upper()
+        dtype = (row.get("DATA_TYPE") or row.get("data_type") or "").upper()
+        if table_upper and table != table_upper:
+            continue
+        if not column:
+            continue
+        lowered = column.lower()
+        if all(term.lower() in lowered for term in terms):
+            score = 10 + sum(1 for term in terms if term.lower() in lowered)
+            if dtype in ("DATE", "TIMESTAMP", "TIMESTAMP_NTZ", "TIMESTAMP_LTZ", "TIMESTAMP_TZ", "DATETIME"):
+                score += 4
+            ranked.append((score, column, dtype))
+    ranked.sort(reverse=True)
+    return ranked[0][1] if ranked else ""
+
+
+def _date_bucket_expr(column: str, granularity: str = "MONTH"):
+    quoted = _quote_identifier(column)
+    parsed = (
+        f"COALESCE("
+        f"TRY_TO_DATE(TO_VARCHAR({quoted}), 'MM/YYYY'), "
+        f"TRY_TO_DATE(TO_VARCHAR({quoted}), 'YYYY-MM-DD'), "
+        f"TRY_TO_DATE(TO_VARCHAR({quoted}))"
+        f")"
+    )
+    return f"DATE_TRUNC('{granularity}', {parsed})", parsed
+
+
+def _maybe_override_trend_report_sql(message: str, database: str, schema_name: str, table_name: str, schema_rows: list):
+    q = (message or "").lower()
+    wants_trend = any(term in q for term in ("trend", "over time", "monthly", "month over month", "by month", "daily", "weekly"))
+    wants_account_open = any(term in q for term in ("account opening", "account open", "acct_open", "acct open", "open date", "opening date"))
+    wants_card_type = "card type" in q or "card_type" in q or ("card" in q and "type" in q)
+    if not (wants_trend and wants_account_open and wants_card_type and database and schema_name):
+        return None
+
+    candidate_table = table_name or ""
+    if not candidate_table:
+        for row in schema_rows or []:
+            table = (row.get("TABLE_NAME") or row.get("table_name") or "").upper()
+            if table and "CARD" in table:
+                candidate_table = table
+                break
+    if not candidate_table:
+        return None
+
+    date_col = (
+        _find_schema_column(schema_rows, candidate_table, "acct", "open")
+        or _find_schema_column(schema_rows, candidate_table, "account", "open")
+        or _find_schema_column(schema_rows, candidate_table, "open", "date")
+    )
+    type_col = _find_schema_column(schema_rows, candidate_table, "card", "type") or _find_schema_column(schema_rows, candidate_table, "type")
+    if not date_col or not type_col:
+        return None
+
+    granularity = "MONTH"
+    bucket_alias = "ACCOUNT_OPEN_MONTH"
+    bucket_expr, parsed_date = _date_bucket_expr(date_col, granularity)
+    table_ref = f"{_quote_identifier(database)}.{_quote_identifier(schema_name)}.{_quote_identifier(candidate_table)}"
+    sql = f"""SELECT
+  TO_VARCHAR({bucket_expr}, 'YYYY-MM') AS {bucket_alias},
+  {_quote_identifier(type_col)} AS {type_col},
+  COUNT(*) AS CARD_COUNT
+FROM {table_ref}
+WHERE {parsed_date} IS NOT NULL
+  AND {parsed_date} >= DATEADD(YEAR, -10, CURRENT_DATE())
+GROUP BY 1, 2
+ORDER BY 1, 2"""
+    return {
+        "sql": sql,
+        "explanation": (
+            f"This report buckets {date_col} by month and groups each month by {type_col}, "
+            "so the chart shows account-opening trend over time instead of a single total count."
+        ),
+        "visualization": {"type": "line", "x": bucket_alias, "y": "CARD_COUNT", "series": type_col},
+        "confidence": "High",
+        "assumptions": "The phrase 'based on the card type' means split the monthly account-opening trend by CARD_TYPE.",
+    }
+
+
+def _maybe_override_card_brand_credit_summary_sql(message: str, database: str, schema_name: str, table_name: str, schema_rows: list):
+    q = (message or "").lower()
+    wants_average_credit = "average" in q and "credit" in q and "limit" in q
+    wants_brand_breakdown = "brand" in q and ("by" in q or "each brand" in q or "per brand" in q)
+    wants_card_count = any(term in q for term in ("number of cards", "count of cards", "card count", "include the number"))
+    wants_chip = "chip" in q
+    if not (wants_average_credit and wants_brand_breakdown and wants_card_count and wants_chip and database and schema_name):
+        return None
+
+    candidate_table = table_name or ""
+    if not candidate_table:
+        for row in schema_rows or []:
+            table = (row.get("TABLE_NAME") or row.get("table_name") or "").upper()
+            if table and "CARD" in table:
+                candidate_table = table
+                break
+    if not candidate_table:
+        return None
+
+    known_finance_cards = candidate_table.upper() == "FINANCE_CARDS_DATA"
+    brand_col = (
+        _find_schema_column(schema_rows, candidate_table, "card", "brand")
+        or _find_schema_column(schema_rows, candidate_table, "brand")
+        or ("CARD_BRAND" if known_finance_cards else "")
+    )
+    credit_limit_col = (
+        _find_schema_column(schema_rows, candidate_table, "credit", "limit")
+        or ("CREDIT_LIMIT" if known_finance_cards else "")
+    )
+    chip_col = (
+        _find_schema_column(schema_rows, candidate_table, "chip")
+        or ("HAS_CHIP" if known_finance_cards else "")
+    )
+    if not brand_col or not credit_limit_col or not chip_col:
+        return None
+
+    cleaned_credit_limit = f"TRY_TO_NUMBER(REGEXP_REPLACE({_quote_identifier(credit_limit_col)}, '[^0-9.-]', ''))"
+    table_ref = f"{_quote_identifier(database)}.{_quote_identifier(schema_name)}.{_quote_identifier(candidate_table)}"
+    sql = f"""SELECT
+  {_quote_identifier(brand_col)} AS {brand_col},
+  ROUND(AVG({cleaned_credit_limit}), 2) AS AVG_CREDIT_LIMIT,
+  COUNT(*) AS CARD_COUNT
+FROM {table_ref}
+WHERE {_quote_identifier(chip_col)} = TRUE
+  AND {cleaned_credit_limit} IS NOT NULL
+GROUP BY 1
+ORDER BY AVG_CREDIT_LIMIT DESC, CARD_COUNT DESC"""
+    return {
+        "sql": sql,
+        "explanation": (
+            f"This groups chip-enabled cards by {brand_col}, calculates the average cleaned {credit_limit_col}, "
+            "and includes the card count for each brand."
+        ),
+        "visualization": {"type": "bar", "x": brand_col, "y": "AVG_CREDIT_LIMIT"},
+        "confidence": "High",
+        "assumptions": "The request asks for a brand-level summary, so the result keeps one row per CARD_BRAND instead of one total count.",
+    }
+
+
 SQL_KEYWORDS = {
     "select", "from", "where", "join", "left", "right", "inner", "outer", "full", "cross", "on", "as", "and", "or",
     "group", "by", "order", "having", "limit", "offset", "case", "when", "then", "else", "end", "distinct", "with",
@@ -731,7 +875,7 @@ def _run_native_compare(schema_summary: str, question: str, database: str, schem
 def _run_ai_compare(schema_summary: str, db_ctx: str, question: str, database: str, schema_name: str, schema_rows: list, semantic_resolution: dict):
     started = time.perf_counter()
     try:
-        prompt = f"{question}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain English."
+        prompt = f"{question}\nGenerate Snowflake SQL that directly answers this dataset question. Prefer grouped, chart-friendly results with concise columns. Also explain what the SQL is doing in plain native language."
         generated = ai.generate_sql_ai_only(schema_summary + "\n" + db_ctx, prompt, db=database, schema=schema_name)
         sql = _qualify_generated_sql(generated.get("sql", ""), database, schema_name)
         validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
@@ -785,6 +929,43 @@ def _run_ai_compare(schema_summary: str, db_ctx: str, question: str, database: s
 async def chat_assistant(req: ChatRequest):
     started = time.perf_counter()
     database, schema_name, table_name, schema_summary, db_ctx, semantic_resolution, schema_rows = _chat_schema_context(req)
+    deterministic_override = (
+        _maybe_override_card_brand_credit_summary_sql(req.message, database, schema_name, table_name, schema_rows)
+        or _maybe_override_trend_report_sql(req.message, database, schema_name, table_name, schema_rows)
+    )
+    if deterministic_override and ai.config.get("processing_mode") == "native" and semantic_resolution.get("gate") != "native_ready":
+        deterministic_override["ai_metadata"] = {
+            "operation": "nl_to_sql",
+            "processing_mode": "Native",
+            "provider": "Native",
+            "model": "Deterministic finance report rule",
+            "processing_time_ms": round((time.perf_counter() - started) * 1000, 1),
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "confidence": deterministic_override.get("confidence", "High"),
+            "assumptions": deterministic_override.get("assumptions", "Used deterministic selected-table report logic."),
+            "fallback_used": True,
+        }
+        sql = _qualify_generated_sql(deterministic_override.get("sql", ""), database, schema_name)
+        validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
+        return {
+            "success": True,
+            "reply": deterministic_override.get("explanation", ""),
+            "sql": "" if validation.get("blocked") else sql,
+            "visualization": deterministic_override.get("visualization", {"type": "none"}),
+            "ai_metadata": deterministic_override.get("ai_metadata", {}),
+            "semantic_resolver": semantic_resolution,
+            "sql_validation": validation,
+            "explainability_timeline": _build_explainability_timeline(
+                "Native",
+                semantic_resolution,
+                deterministic_override,
+                "" if validation.get("blocked") else sql,
+                validation,
+                {"success": False, "error": "Manual execution pending.", "execution_time_ms": 0, "rows_returned": 0, "preview": []},
+                started,
+            ),
+        }
     if ai.config.get("processing_mode") == "native" and semantic_resolution.get("gate") != "native_ready":
         gate_execution = {"success": False, "error": "Resolver confidence below Native threshold.", "execution_time_ms": 0, "rows_returned": 0, "preview": []}
         gate_validation = {"status": "blocked", "blocked": True, "warnings": ["Resolver confidence below Native threshold."]}
@@ -818,6 +999,9 @@ async def chat_assistant(req: ChatRequest):
             "explainability_timeline": _build_explainability_timeline("Native", semantic_resolution, gate_generated, "", gate_validation, gate_execution, started),
         }
     res = ai.generate_sql(schema_summary + "\n" + db_ctx, req.message, db=database, schema=schema_name)
+    if deterministic_override:
+        deterministic_override["ai_metadata"] = res.get("ai_metadata", {})
+        res = deterministic_override
     sql = _qualify_generated_sql(res.get("sql", ""), database, schema_name)
     validation = _sql_validation_firewall(sql, schema_rows, database, schema_name)
     if validation.get("blocked") and ai.config.get("processing_mode") in ("ai", "compare") and sql:

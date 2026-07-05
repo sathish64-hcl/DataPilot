@@ -12,6 +12,32 @@ from urllib.parse import urljoin, urlparse, urldefrag
 
 router = APIRouter()
 
+INCIDENTS_TABLE_DOC_TITLE = "Incident Command Center - INCIDENTS Table Documentation"
+INCIDENTS_TABLE_DOC_CONTENT = (
+    "The KAGGLE.INCIDENT_MGMT.INCIDENTS table is the primary incident-management fact table for operational "
+    "reliability analysis. It stores one row per incident and supports the Incident Command Center application. "
+    "The table is used to answer questions about open incidents, critical incidents, SLA breaches, affected users, "
+    "cost impact, root cause patterns, change-linked incidents, and application reliability trends. Important fields "
+    "include INCIDENT_ID as the unique incident identifier, APP_NAME for the impacted application, SEVERITY for Critical "
+    "High Medium Low priority, STATUS for Open In Progress Resolved lifecycle, CREATED_DATE for incident creation time, "
+    "RESOLVED_DATE for closure time, SLA_BREACHED as the service-level breach flag, ROOT_CAUSE for the diagnosed reason, "
+    "CATEGORY for Database ETL API Infrastructure or Application grouping, CHANGE_ID for release/change correlation, "
+    "USERS_AFFECTED for business impact, and COST_IMPACT for estimated financial impact. Common questions include which "
+    "applications violate SLA the most, which incidents are still open, which root causes repeat, what critical incidents "
+    "need attention, which changes created incidents, and which applications have the highest user or cost impact. "
+    "Recommended joins include APPLICATIONS on APP_ID for application ownership, EMPLOYEES on OWNER_ID for responsible "
+    "teams, and CHANGE_REQUESTS on CHANGE_ID for deployment correlation."
+)
+INCIDENTS_TABLE_DOC_METADATA = {
+    "author": "Data Pilot Studio",
+    "version": "1.0",
+    "updated": "2026-07-04",
+    "database": "KAGGLE",
+    "schema": "INCIDENT_MGMT",
+    "table": "INCIDENTS",
+    "tags": ["incident", "incidents", "table documentation", "incident command center", "sla", "root cause"],
+}
+
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "can", "for", "from", "give", "high", "i",
     "in", "is", "it", "me", "of", "on", "or", "show", "tell", "the", "to", "what", "which",
@@ -35,6 +61,20 @@ def _row_value(row, name, default=""):
     return row.get(name) if name in row else row.get(name.upper(), row.get(name.lower(), default))
 
 
+def _ensure_incidents_table_doc():
+    docs_res = db.execute_query("SELECT title FROM rag_documents")
+    if docs_res.get("success"):
+        titles = {str(_row_value(row, "TITLE", "")).lower() for row in docs_res.get("data", [])}
+        if INCIDENTS_TABLE_DOC_TITLE.lower() in titles:
+            return
+    db.add_rag_document(
+        INCIDENTS_TABLE_DOC_TITLE,
+        "Table Documentation",
+        INCIDENTS_TABLE_DOC_CONTENT,
+        INCIDENTS_TABLE_DOC_METADATA,
+    )
+
+
 def _query_terms(query: str):
     raw_terms = re.findall(r"[a-zA-Z0-9%']+", (query or "").lower())
     terms = set()
@@ -47,6 +87,14 @@ def _query_terms(query: str):
             terms.add(cleaned[:-1])
         terms.update(TOKEN_EXPANSIONS.get(cleaned, set()))
     return terms
+
+
+def _is_incident_doc_query(query: str):
+    query_lower = (query or "").lower()
+    return (
+        any(token in query_lower for token in ("incident", "incidents", "incident_command", "incident command"))
+        and any(token in query_lower for token in ("table", "documentation", "document", "field", "fields", "schema", "explain"))
+    )
 
 
 def _parse_metadata(value):
@@ -75,6 +123,17 @@ def _score_document(doc, query: str):
             score += 4
 
     query_lower = (query or "").lower()
+    wants_incident_docs = _is_incident_doc_query(query)
+    if wants_incident_docs:
+        if any(token in haystack for token in ("incidents", "incident_id", "sla_breached", "root_cause", "cost_impact", "incident command center")):
+            score += 35
+        if source_type.lower() in ("table documentation", "data dictionary", "runbook"):
+            score += 18
+        if metadata.get("table", "").upper() == "INCIDENTS":
+            score += 25
+        if any(token in haystack for token in ("nbcnews", "headline", "world news", "politics", "sports", "culture")):
+            score -= 20
+
     if any(token in query_lower for token in ("movie", "film", "rate", "rated", "rating", "tomato")):
         if any(token in haystack for token in ("rotten", "tomatoes", "watchlist", "tomatometer", "movie", "film")):
             score += 8
@@ -333,6 +392,7 @@ def _index_chunks(title: str, source_type: str, text: str, metadata: dict):
 
 @router.get("/api/rag/search")
 async def search_rag(query: str = ""):
+    _ensure_incidents_table_doc()
     docs_res = db.execute_query("SELECT rowid, title, source_type, content, metadata FROM rag_documents")
     if not docs_res.get("success"):
          raise HTTPException(status_code=500, detail="Failed to load knowledge database.")
@@ -352,6 +412,16 @@ async def search_rag(query: str = ""):
         key=lambda item: (item.get("RELEVANCE_SCORE", 0), _row_value(item, "ROWID", _row_value(item, "rowid", 0))),
         reverse=True
     )[:10]
+    if _is_incident_doc_query(query):
+        incident_chunks = [
+            chunk for chunk in matched_chunks
+            if any(
+                token in f"{_row_value(chunk, 'TITLE', '')} {_row_value(chunk, 'CONTENT', '')} {_row_value(chunk, 'METADATA', '')}".lower()
+                for token in ("incident_id", "sla_breached", "root_cause", "cost_impact", "incident command center", "kaggle.incident_mgmt.incidents")
+            )
+        ]
+        if incident_chunks:
+            matched_chunks = incident_chunks[:10]
 
     if not matched_chunks:
         return {
@@ -622,6 +692,7 @@ async def ingest_batch(
 
 @router.get("/api/rag/documents")
 async def get_rag_documents():
+    _ensure_incidents_table_doc()
     return {"documents": db.get_rag_documents_list()}
 
 @router.post("/api/rag/documents/clear")
