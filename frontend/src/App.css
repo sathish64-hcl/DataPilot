@@ -722,6 +722,322 @@ body {
   color: var(--accent-green);
 }
 
+.current-app-mode.agentic {
+  border-color: rgba(255, 159, 67, 0.28);
+  background: rgba(255, 159, 67, 0.1);
+  color: var(--accent-orange);
+}
+
+.agent-command-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding-bottom: 36px;
+}
+
+.agent-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+}
+
+.agent-hero h2 {
+  margin: 5px 0 8px;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.agent-hero p,
+.agent-persona-card p,
+.agent-approval-card p,
+.agent-report-card p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agent-loop-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+  max-width: 360px;
+}
+
+.agent-loop-strip span {
+  border: 1px solid rgba(0, 242, 254, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 149, 255, 0.08);
+  color: var(--text-primary);
+  padding: 8px 11px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.agent-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.agent-goal-card,
+.agent-toolbox-card,
+.agent-timeline-card,
+.agent-approval-card,
+.agent-report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.agent-goal-input {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: rgba(5, 7, 12, 0.58);
+  color: var(--text-primary);
+  padding: 12px;
+  font-family: var(--font-family-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.agent-goal-input:focus {
+  border-color: rgba(0, 242, 254, 0.36);
+  box-shadow: 0 0 0 3px rgba(0, 149, 255, 0.08);
+}
+
+.agent-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.agent-persona-card {
+  border: 1px solid rgba(0, 224, 150, 0.18);
+  border-radius: 10px;
+  background: rgba(0, 224, 150, 0.055);
+  padding: 12px;
+}
+
+.agent-persona-card strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.agent-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-tool-grid div {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+  min-height: 78px;
+}
+
+.agent-tool-grid strong,
+.agent-report-grid span,
+.agent-evidence-list > span,
+.agent-audit-list > span {
+  display: block;
+  color: var(--accent-cyan);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.agent-tool-grid span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.agent-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.agent-step-index {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.agent-step-body {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.agent-step.complete .agent-step-index,
+.agent-step.complete .agent-step-body {
+  border-color: rgba(0, 224, 150, 0.24);
+  background: rgba(0, 224, 150, 0.055);
+}
+
+.agent-step.running .agent-step-index,
+.agent-step.running .agent-step-body {
+  border-color: rgba(0, 242, 254, 0.32);
+  box-shadow: 0 0 18px rgba(0, 149, 255, 0.12);
+}
+
+.agent-step.waiting .agent-step-index,
+.agent-step.waiting .agent-step-body {
+  border-color: rgba(255, 159, 67, 0.32);
+  background: rgba(255, 159, 67, 0.07);
+}
+
+.agent-step.error .agent-step-index,
+.agent-step.error .agent-step-body {
+  border-color: rgba(255, 82, 100, 0.32);
+  background: rgba(255, 82, 100, 0.06);
+}
+
+.agent-step-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.agent-step-header span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+
+.agent-step-header strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.agent-step-header em {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+.agent-step-action {
+  color: var(--accent-cyan) !important;
+  font-size: 12px !important;
+  margin-top: 8px;
+}
+
+.agent-step-body p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 7px;
+}
+
+.agent-approval-card {
+  border-color: rgba(255, 159, 67, 0.32);
+  background: rgba(255, 159, 67, 0.055);
+}
+
+.agent-approval-card.approved {
+  border-color: rgba(0, 224, 150, 0.28);
+  background: rgba(0, 224, 150, 0.055);
+}
+
+.agent-sql-review {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-report-grid > div,
+.agent-evidence-list,
+.agent-audit-list {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.agent-evidence-list,
+.agent-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-evidence-list div,
+.agent-audit-list div {
+  border-radius: 8px;
+  background: rgba(5, 7, 12, 0.35);
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-audit-list strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1100px) {
+  .agent-hero,
+  .agent-layout,
+  .agent-report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-loop-strip {
+    justify-content: flex-start;
+  }
+}
+
 .ai-status-dot {
   width: 8px;
   height: 8px;

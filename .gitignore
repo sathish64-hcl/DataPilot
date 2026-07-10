@@ -1,4 +1,5 @@
 backend/query_log.jsonl
+backend/*.log
 backend/__pycache__/
 frontend/dist/
 frontend/node_modules/

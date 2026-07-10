@@ -224,8 +224,8 @@ function App() {
   });
   
   const [connectionStatus, setConnectionStatus] = useState({
-    status: 'disconnected',
-    message: 'Connection is yet to be established.',
+    status: 'connecting',
+    message: 'Checking saved database connection...',
     mode: 'SNOWFLAKE'
   });
 
@@ -529,6 +529,15 @@ function App() {
   const isAiConfigured = aiNeedsConfig && aiConfig.enabled && !isAiConnected;
   const appExecutionCatalog = [
     {
+      id: 'agentCommand',
+      name: 'DataOps Agent Command Center',
+      mode: 'Agentic',
+      llmOps: ['agent_planning', 'rag_answer', 'sql_optimization'],
+      nativeWork: 'Plans the investigation, executes Snowflake/RAG/quality/cost tools, records observations, and gates risky remediation.',
+      llmWork: 'Optional goal interpretation, root-cause narrative, recommendation wording, and final executive report.',
+      note: 'Shows the visible agent loop: goal, plan, tools, observations, approval, and audit trail.'
+    },
+    {
       id: 'chat',
       name: 'AI Analyst Studio',
       mode: 'Hybrid',
@@ -681,8 +690,7 @@ function App() {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     return params.get('demo') === '1'
-      || params.get('demoDirector') === '1'
-      || window.localStorage.getItem('dataPilotDemoDirector') === 'enabled';
+      || params.get('demoDirector') === '1';
   });
   const demoFinanceContext = {
     database: 'KAGGLE',
@@ -702,21 +710,23 @@ function App() {
       tab: 'chat',
       analystTab: 'chat',
       title: 'Application Landscape',
+      seconds: 10,
       screen: 'Left navigation applications',
-      action: 'Start at the top of the left pane and show the full platform coverage: analyst studio, SQL tuning, table intelligence, search, anomaly, freshness, cost, incident command, document hub, query log, and execution footprint.',
+      action: 'Start at the top of the left pane and show the full platform coverage, including Agent Command Center as the orchestration layer.',
       prompt: '',
-      narration: 'Data Pilot Studio brings the core data operations workflow into one application. The left navigation includes analyst workflows, SQL tuning, table intelligence, search, anomaly detection, freshness, cost analytics, incident command, document hub, query log, and AI usage governance.',
-      value: 'One workspace for live data analysis, operations, governance, and AI-assisted workflows.'
+      narration: 'Data Pilot Studio is a governed AI data platform for live Snowflake work. The left navigation shows the specialist tools, and Agent Command Center is the layer that can plan across those tools.',
+      value: 'One workspace for specialist data tools plus an agentic orchestration layer.'
     },
     {
       tab: 'chat',
       analystTab: 'chat',
       openConnectionModal: true,
       title: 'Database Settings',
+      seconds: 7,
       screen: 'Database Settings modal',
       action: 'Open Configure Connection, show the Database Platform choices, then show Snowflake authentication methods. Snowflake is used for this live demo.',
       prompt: '',
-      narration: 'Database settings are separate from AI settings. The platform selector shows mock mode, Snowflake, Redshift, and PostgreSQL style targets. For this demo, Snowflake is used as the live connection. The authentication dropdown shows password, SSO external browser, and token-based options.',
+      narration: 'Database settings are separate from AI settings. The app supports multiple database targets; this run uses Snowflake with role, warehouse, and authentication control.',
       value: 'Database connection, platform choice, and authentication are configured before the application workflows run.'
     },
     {
@@ -724,6 +734,7 @@ function App() {
       analystTab: 'chat',
       showSnowflakeSession: true,
       title: 'Snowflake Session',
+      seconds: 7,
       screen: 'Snowflake / Session section',
       action: 'Show the Role and Warehouse selectors in the left pane. Explain that users choose these once, then every application inherits the session context.',
       prompt: '',
@@ -735,6 +746,7 @@ function App() {
       analystTab: 'chat',
       showAiConfig: true,
       title: 'AI Configuration',
+      seconds: 8,
       screen: 'AI Configuration section',
       action: 'Show AI Provider, Model, API key, optional Base URL, Test Connection, and connection status.',
       prompt: '',
@@ -746,6 +758,7 @@ function App() {
       analystTab: 'chat',
       showAiConfig: true,
       title: 'Native, AI, And Compare Modes',
+      seconds: 8,
       screen: 'Execution Mode selector',
       action: 'Explain Native, AI, and Compare. Native runs Python and Snowflake SQL only. AI routes supported reasoning through the configured model. Compare runs both independently and scores intent match, SQL quality, results, explanation, and performance.',
       prompt: '',
@@ -756,7 +769,8 @@ function App() {
       tab: 'chat',
       analystTab: 'chat',
       context: 'finance',
-      time: '2:25 - 3:20',
+      time: '0:40 - 1:20',
+      seconds: 40,
       title: 'AI Chat Copilot',
       screen: 'AI Analyst Studio / Chat',
       action: `Select ${demoContextLabel(demoFinanceContext)}, ask a natural-language card analytics question, and show the generated SQL and answer in the chat thread.`,
@@ -768,7 +782,8 @@ function App() {
       tab: 'chat',
       analystTab: 'ask',
       context: 'finance',
-      time: '3:20 - 4:15',
+      time: '1:20 - 1:55',
+      seconds: 35,
       title: 'Query-To-Insight Loop',
       screen: 'AI Analyst Studio / Ask Dataset',
       action: `Use ${demoContextLabel(demoFinanceContext)}, ask a card portfolio question, and show SQL, chart, result preview, explanation, and Compare summary.`,
@@ -779,7 +794,8 @@ function App() {
     {
       tab: 'chat',
       analystTab: 'report',
-      time: '4:15 - 5:00',
+      time: '1:55 - 2:25',
+      seconds: 30,
       title: 'Natural Language Report Builder',
       screen: 'AI Analyst Studio / Report Builder',
       action: 'Build a report and show Auto, Bar, and Line chart options.',
@@ -790,7 +806,8 @@ function App() {
     {
       tab: 'tableDetails',
       tableDetailsTab: 'overview',
-      time: '5:00 - 5:55',
+      time: '2:25 - 2:55',
+      seconds: 30,
       title: 'Table Intelligence Studio',
       screen: 'Overview, Table Details, Profiler',
       action: 'Select INCIDENTS, load details, run profile, and move through metadata, sample rows, profiler stats, AI health, DQ checks, and labels.',
@@ -801,7 +818,8 @@ function App() {
     {
       tab: 'tableDetails',
       tableDetailsTab: 'volumeAnalyzer',
-      time: '5:55 - 6:35',
+      time: '2:55 - 3:25',
+      seconds: 30,
       title: 'Volume Analyzer',
       screen: 'Table Intelligence Studio / Volume Analyzer',
       action: 'Select CREATED_DATE, choose Event or Batch, load analytics, and switch throughput and peak-pattern chart options.',
@@ -812,7 +830,8 @@ function App() {
     {
       tab: 'tableDetails',
       tableDetailsTab: 'insights',
-      time: '6:35 - 7:10',
+      time: '3:25 - 3:50',
+      seconds: 25,
       title: 'Insight Generator',
       screen: 'Table Intelligence Studio / Insight Generator',
       action: 'Generate insights and show KPI, trend, anomaly, correlation, and PII-like cards with executable query cards.',
@@ -823,7 +842,8 @@ function App() {
     {
       tab: 'anomaly',
       anomalyTab: 'scan',
-      time: '7:10 - 7:50',
+      time: '3:50 - 4:15',
+      seconds: 25,
       title: 'Anomaly Detector',
       screen: 'Anomaly Detector',
       action: 'Scan COST_IMPACT, switch plot options, then open Custom Rule and preview executable SQL.',
@@ -833,7 +853,8 @@ function App() {
     },
     {
       tab: 'freshness',
-      time: '7:50 - 8:25',
+      time: '4:15 - 4:35',
+      seconds: 20,
       title: 'Data Freshness',
       screen: 'Data Freshness',
       action: 'Select INCIDENTS and CREATED_DATE, run freshness, and show Age Hours, Latest Rows, Previous Rows, and the trend chart.',
@@ -843,7 +864,8 @@ function App() {
     },
     {
       tab: 'sql',
-      time: '8:25 - 9:10',
+      time: '4:35 - 5:00',
+      seconds: 25,
       title: 'Cost-Aware SQL Tuning',
       screen: 'SQL Explainer / Tuning',
       action: 'Click Analyze & Optimize SQL and show cost advisor, AI performance report, optimized SQL, validation timeline, and execute/copy controls.',
@@ -857,7 +879,8 @@ ORDER BY TOTAL_COST DESC;`,
     },
     {
       tab: 'cost',
-      time: '9:10 - 9:45',
+      time: '5:00 - 5:15',
+      seconds: 15,
       title: 'Snowflake Cost Analyzer',
       screen: 'Cost Analyzer',
       action: 'Show daily trend, warehouse view, user view, scatter plot, and recommendations.',
@@ -867,7 +890,8 @@ ORDER BY TOTAL_COST DESC;`,
     },
     {
       tab: 'catalogSearch',
-      time: '9:45 - 10:15',
+      time: '5:15 - 5:30',
+      seconds: 15,
       title: 'Search And Discovery',
       screen: 'Column / Table Search',
       action: 'Search incident, then narrow column results with table keyword SLA or date/cost filters.',
@@ -877,7 +901,8 @@ ORDER BY TOTAL_COST DESC;`,
     },
     {
       tab: 'rag',
-      time: '10:15 - 11:00',
+      time: '5:30 - 5:55',
+      seconds: 25,
       title: 'Document Hub',
       screen: 'Document Hub',
       action: 'Ask a table-documentation question and show how Document Hub answers from learned web pages, files, JSON, CSV, Excel, and runbook-style content.',
@@ -887,7 +912,8 @@ ORDER BY TOTAL_COST DESC;`,
     },
     {
       tab: 'queryLog',
-      time: '11:00 - 11:25',
+      time: '5:55 - 6:05',
+      seconds: 10,
       title: 'Persistent Query Log',
       screen: 'Query Log',
       action: 'Show persisted SQL generated and executed across the workbench. Point out replay/execute options on logged queries.',
@@ -897,7 +923,8 @@ ORDER BY TOTAL_COST DESC;`,
     },
     {
       tab: 'executionFootprint',
-      time: '11:25 - 11:55',
+      time: '6:05 - 6:20',
+      seconds: 15,
       title: 'Execution Footprint And Spend-Aware AI',
       screen: 'Execution Footprint',
       action: 'Introduce Execution Footprint, then highlight prompt optimization, tokens avoided, cost avoided, prompt cache savings, and budget status.',
@@ -906,18 +933,20 @@ ORDER BY TOTAL_COST DESC;`,
       value: 'Shows enterprise-grade AI governance, not just AI features.'
     },
     {
-      tab: 'executionFootprint',
-      time: '11:55 - 12:30',
-      title: 'Governance And AI Transparency',
-      screen: 'Execution Footprint',
-      action: 'Show app-by-app Native/Hybrid usage, spend-aware decisions, prompt cache, token budget, accumulated token usage, and reset control.',
-      prompt: '',
-      narration: 'Execution Footprint explains which apps used LLM tokens, which stayed native, how many tokens were consumed, what cost was estimated, and how spend-aware routing avoided unnecessary model calls.',
-      value: 'AI usage is observable, governed, and reset only by the user.'
+      time: '6:20 - 6:42',
+      seconds: 22,
+      tab: 'agentCommand',
+      title: 'Agent Command Center',
+      screen: 'DataOps Agent Command Center',
+      action: 'Run the DataOps Agent goal, show the plan, tool execution timeline, observations, approval gate, and final report.',
+      prompt: 'Investigate why incident cost and SLA risk increased recently, then prepare a safe remediation plan.',
+      narration: 'The specialist apps are the toolbelt. Agent Command Center is the agentic layer. It accepts a goal, plans the investigation, calls metadata, freshness, anomaly, RAG, cost, and incident tools, observes the evidence, pauses for approval, and produces an audit-ready report.',
+      value: 'This is the clearest agentic AI moment: goal, plan, tools, observations, approval, and audit trail.'
     },
     {
       tab: 'incidentCommand',
-      time: '12:30 - 13:15',
+      time: '6:42 - 6:55',
+      seconds: 13,
       title: 'Custom Client Application',
       screen: 'Incident Command Center',
       action: 'Open Incident Command Center last, refresh the dashboard, and ask the SLA question in Compare mode.',
@@ -929,6 +958,7 @@ ORDER BY TOTAL_COST DESC;`,
   const guidedDemoStep = guidedDemoSteps[guidedDemoStepIndex] || guidedDemoSteps[0];
   const getGuidedDemoStepSeconds = (step) => {
     if (!step) return 18;
+    if (step.seconds) return step.seconds;
     const narrationWords = String(step.narration || '').trim().split(/\s+/).filter(Boolean).length;
     const actionWords = String(step.action || '').trim().split(/\s+/).filter(Boolean).length;
     const promptLines = String(step.prompt || '').split('\n').filter(line => line.trim()).length;
@@ -980,7 +1010,7 @@ ORDER BY TOTAL_COST DESC;`,
         focusSelector: '.sidebar-menu',
         resultSelector: '.sidebar-menu',
         resultTitle: 'Platform Overview',
-        resultBullets: ['The suite covers analyst chat, SQL tuning, table intelligence, search, anomaly, freshness, cost, incidents, documents, query log, and AI usage.', 'The first shot starts at the top of the left pane.', 'Each workflow stays available from a single application shell.']
+        resultBullets: ['The suite covers agent orchestration, analyst chat, SQL tuning, table intelligence, search, anomaly, freshness, cost, incidents, documents, query log, and AI usage.', 'Specialist apps act as tools.', 'Agent Command Center is the visible planner and orchestrator.']
       };
     }
     if (step.title === 'Execution Footprint And Spend-Aware AI') {
@@ -989,6 +1019,14 @@ ORDER BY TOTAL_COST DESC;`,
         resultSelector: '.execution-spend-aware-card',
         resultTitle: 'Execution Footprint',
         resultBullets: ['This screen explains where Native, Snowflake, and LLM work happened.', 'Prompt count, tokens, estimated cost, response time, cache savings, and budget status are visible.', 'AI value is measured and governed across sessions.']
+      };
+    }
+    if (step.tab === 'agentCommand') {
+      return {
+        focusSelector: '.agent-goal-card',
+        resultSelector: '.agent-report-card, .agent-approval-card, .agent-timeline-card',
+        resultTitle: 'Agentic DataOps Workflow',
+        resultBullets: ['The user gives a goal, not a single SQL command.', 'The agent plans, calls specialist tools, observes evidence, and pauses for approval.', 'The final report keeps root cause, recommendation, evidence, SQL, and audit trail together.']
       };
     }
     if (step.title === 'AI Chat Copilot') {
@@ -1175,6 +1213,41 @@ ORDER BY TOTAL_COST DESC;`,
     return null;
   };
 
+  const waitForDemoChatFirewallCard = async (timeoutMs = 5000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const cards = Array.from(document.querySelectorAll('.chat-bubble.ai .sql-firewall-card'));
+      const card = cards[cards.length - 1];
+      if (card) return card;
+      await waitForDemo(180);
+    }
+    return null;
+  };
+
+  const waitForLatestDemoChatElement = async (selector, timeoutMs = 5000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const elements = Array.from(document.querySelectorAll(selector));
+      const element = elements[elements.length - 1];
+      if (element) return element;
+      await waitForDemo(180);
+    }
+    return null;
+  };
+
+  const focusDemoChatLayer = async (selector, label, options = {}) => {
+    const element = await waitForLatestDemoChatElement(selector, options.timeoutMs || 5000);
+    if (!element) return false;
+    const activeClass = options.activeClass || 'demo-active-chat-layer';
+    element.classList.add(activeClass);
+    element.scrollIntoView?.({ block: options.block || 'nearest', inline: 'nearest', behavior: 'smooth' });
+    await waitForDemo(options.afterScrollPause || 1000);
+    focusDemoDirectorTarget(`.${activeClass}`, label);
+    await waitForDemo(options.holdMs || 2600);
+    element.classList.remove(activeClass);
+    return true;
+  };
+
   const parkDemoDirectorPointer = (label = '') => {
     if (typeof window === 'undefined') return;
     setDemoDirectorHighlight(null);
@@ -1237,11 +1310,14 @@ ORDER BY TOTAL_COST DESC;`,
   const applyGuidedDemoStep = (index) => {
     const step = guidedDemoSteps[index];
     if (!step) return;
+    if (!(step.tab === 'chat' && step.analystTab === 'chat' && step.title === 'AI Chat Copilot')) {
+      setDemoHoldChatSql(false);
+    }
     setActiveTab(step.tab);
     setConnectionModalOpen(Boolean(step.openConnectionModal));
     if (step.context === 'finance') {
       setDemoActiveContext(demoFinanceContext);
-    } else if (['tableDetails', 'anomaly', 'freshness', 'catalogSearch', 'sql', 'incidentCommand'].includes(step.tab)) {
+    } else if (['tableDetails', 'anomaly', 'freshness', 'catalogSearch', 'sql', 'incidentCommand', 'agentCommand'].includes(step.tab)) {
       setDemoActiveContext(demoIncidentContext);
     }
     if (step.title === 'Application Landscape') {
@@ -1266,6 +1342,21 @@ ORDER BY TOTAL_COST DESC;`,
     if (step.tab === 'incidentCommand') {
       fetchIncidentCommandDashboard();
       setIncidentQuestion(step.prompt || 'Which applications violate SLA the most?');
+    }
+    if (step.tab === 'agentCommand') {
+      setAgentGoal(step.prompt || 'Investigate why incident cost and SLA risk increased recently, then prepare a safe remediation plan.');
+      setAgentApprovalRequired(false);
+      setAgentApprovalGranted(false);
+      setAgentFinalReport(null);
+      setAgentTimeline([
+        {
+          id: 'goal',
+          title: 'Goal Intake',
+          tool: 'Agent Planner',
+          status: 'ready',
+          observation: 'The demo will run the agent loop: goal, plan, tool execution, observations, approval gate, and final report.'
+        }
+      ]);
     }
     if (step.tab === 'rag') {
       fetchRagDocuments();
@@ -1415,6 +1506,20 @@ ORDER BY TOTAL_COST DESC;`,
   const [incidentQuestion, setIncidentQuestion] = useState('Which application has the highest incident count?');
   const [incidentQueryResult, setIncidentQueryResult] = useState(null);
   const [incidentQueryLoading, setIncidentQueryLoading] = useState(false);
+  const [agentGoal, setAgentGoal] = useState('Investigate why incident cost and SLA risk increased recently, then prepare a safe remediation plan.');
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [agentApprovalRequired, setAgentApprovalRequired] = useState(false);
+  const [agentApprovalGranted, setAgentApprovalGranted] = useState(false);
+  const [agentFinalReport, setAgentFinalReport] = useState(null);
+  const [agentTimeline, setAgentTimeline] = useState([
+    {
+      id: 'goal',
+      title: 'Goal Intake',
+      tool: 'Agent Planner',
+      status: 'ready',
+      observation: 'Enter a data operations goal and run the agent to generate a plan, execute tools, and produce an evidence-backed report.'
+    }
+  ]);
 
   // Utility copy ref
   const [copiedQuery, setCopiedQuery] = useState('');
@@ -1422,10 +1527,10 @@ ORDER BY TOTAL_COST DESC;`,
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (demoHoldChatSql) return;
+    if (demoHoldChatSql || (guidedDemoOpen && guidedDemoAutoPlay && activeTab === 'chat' && analystStudioTab === 'chat')) return;
     // Scroll to bottom of chat
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages, demoHoldChatSql]);
+  }, [chatMessages, demoHoldChatSql, guidedDemoOpen, guidedDemoAutoPlay, activeTab, analystStudioTab]);
 
   async function loadChatSamples(dbName, schemaName, tableName) {
     try {
@@ -1565,9 +1670,10 @@ ORDER BY TOTAL_COST DESC;`,
   };
 
   // Connection testing
-  const handleTestConnection = async (e) => {
-    e.preventDefault();
-    setConnectionStatus({ status: 'connecting', message: 'Testing server connection...', mode: 'PENDING' });
+  const testDatabaseConnection = async ({ closeModal = false, showConnecting = true } = {}) => {
+    if (showConnecting) {
+      setConnectionStatus({ status: 'connecting', message: 'Testing server connection...', mode: 'PENDING' });
+    }
     try {
       const res = await fetch(`${API_BASE}/api/connection/test`, {
         method: 'POST',
@@ -1584,14 +1690,16 @@ ORDER BY TOTAL_COST DESC;`,
           message: data.message,
           mode: data.mode
         });
-        setConnectionModalOpen(false);
+        if (closeModal) setConnectionModalOpen(false);
         loadDatabases(); // Fetch database scoping list on connection load
+        return true;
       } else {
         setConnectionStatus({
           status: 'disconnected',
           message: data.message || 'Connection test failed.',
           mode: data.mode || connectionConfig.platform
         });
+        return false;
       }
     } catch (err) {
       setConnectionStatus({
@@ -1599,8 +1707,19 @@ ORDER BY TOTAL_COST DESC;`,
         message: err.message || 'Could not connect to FastAPI server. Ensure backend is running.',
         mode: 'OFFLINE'
       });
+      return false;
     }
   };
+
+  const handleTestConnection = async (e) => {
+    e.preventDefault();
+    await testDatabaseConnection({ closeModal: true, showConnecting: true });
+  };
+
+  useEffect(() => {
+    testDatabaseConnection({ closeModal: false, showConnecting: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Send message to Copilot chat
   const handleSendChatMessage = async (textToSend, contextOverride = null, modeOverride = null) => {
@@ -2142,6 +2261,257 @@ ORDER BY TOTAL_COST DESC;`,
       console.error('Error fetching RAG documents:', err);
     }
   }
+
+  const agentPlanTemplate = () => ([
+    {
+      id: 'plan',
+      title: 'Plan Investigation',
+      tool: 'Agent Planner',
+      status: 'pending',
+      action: 'Break the business/data goal into tool calls and evidence checks.',
+      observation: ''
+    },
+    {
+      id: 'metadata',
+      title: 'Resolve Snowflake Context',
+      tool: 'Metadata Search',
+      status: 'pending',
+      action: 'Find the incident table and important operational fields.',
+      observation: ''
+    },
+    {
+      id: 'freshness',
+      title: 'Check Data Freshness',
+      tool: 'Freshness Scanner',
+      status: 'pending',
+      action: 'Use CREATED_DATE to verify whether the incident table is current.',
+      observation: ''
+    },
+    {
+      id: 'anomaly',
+      title: 'Scan Cost Impact Anomalies',
+      tool: 'Anomaly Detector',
+      status: 'pending',
+      action: 'Run a numeric anomaly scan on COST_IMPACT.',
+      observation: ''
+    },
+    {
+      id: 'rag',
+      title: 'Retrieve Runbook Knowledge',
+      tool: 'Document Hub RAG',
+      status: 'pending',
+      action: 'Search indexed incident documentation and runbooks for table purpose and triage guidance.',
+      observation: ''
+    },
+    {
+      id: 'incident',
+      title: 'Inspect Incident Signals',
+      tool: 'Incident Command Center',
+      status: 'pending',
+      action: 'Load incident KPIs, trends, root causes, priority, and impacted apps.',
+      observation: ''
+    },
+    {
+      id: 'cost',
+      title: 'Estimate Query Cost / Optimization',
+      tool: 'Cost-Aware SQL Advisor',
+      status: 'pending',
+      action: 'Analyze a targeted incident query and suggest a cheaper operational review pattern.',
+      observation: ''
+    },
+    {
+      id: 'approval',
+      title: 'Human Approval Gate',
+      tool: 'Approval Policy',
+      status: 'pending',
+      action: 'Pause before any remediation SQL or operational change.',
+      observation: ''
+    },
+    {
+      id: 'report',
+      title: 'Final Root-Cause Report',
+      tool: 'Agent Reporter',
+      status: 'pending',
+      action: 'Combine evidence into root-cause hypothesis, fix plan, risk, and audit trail.',
+      observation: ''
+    }
+  ]);
+
+  const updateAgentStep = (id, patch) => {
+    setAgentTimeline(prev => prev.map(step => step.id === id ? { ...step, ...patch } : step));
+  };
+
+  const summarizeRows = (rows, emptyText = 'No rows returned') => {
+    if (!Array.isArray(rows) || rows.length === 0) return emptyText;
+    return rows.slice(0, 3).map(row => Object.entries(row).slice(0, 3).map(([key, value]) => `${key}: ${value}`).join(', ')).join(' | ');
+  };
+
+  const runAgentCommandCenter = async () => {
+    if (!agentGoal.trim() || agentRunning) return;
+    setAgentRunning(true);
+    setAgentApprovalRequired(false);
+    setAgentApprovalGranted(false);
+    setAgentFinalReport(null);
+    const plan = agentPlanTemplate();
+    setAgentTimeline(plan);
+    const evidence = {};
+
+    const runStep = async (id, executor) => {
+      updateAgentStep(id, { status: 'running', observation: 'Running tool call...' });
+      try {
+        const observation = await executor();
+        updateAgentStep(id, { status: 'complete', observation });
+      } catch (err) {
+        const message = err.message || 'Tool failed. The agent kept the remaining workflow available.';
+        const backendHint = message.toLowerCase().includes('failed to fetch')
+          ? 'Backend API is not reachable at http://127.0.0.1:8000. Restart the backend, then run the agent again.'
+          : message;
+        updateAgentStep(id, { status: 'error', observation: backendHint });
+      }
+    };
+
+    await runStep('plan', async () => {
+      evidence.plan = [
+        'Use metadata first so the agent does not guess fields.',
+        'Check freshness and anomalies before forming a cause.',
+        'Use RAG for operational context.',
+        'Pause before remediation SQL.'
+      ];
+      return `Plan created for goal: "${agentGoal}". The agent will use metadata, freshness, anomaly, RAG, incident, and cost tools before proposing remediation.`;
+    });
+
+    await runStep('metadata', async () => {
+      const params = new URLSearchParams({ database: 'KAGGLE', schema: 'INCIDENT_MGMT', query: 'incident', table_filter: 'incident' });
+      const res = await fetch(`${API_BASE}/api/workbench/search?${params.toString()}`);
+      const data = await res.json();
+      evidence.metadata = data;
+      const tableCount = data.table_results?.length || data.tables?.length || 0;
+      const columnCount = data.column_results?.length || data.columns?.length || data.results?.length || 0;
+      return `Resolved KAGGLE.INCIDENT_MGMT with ${tableCount} table matches and ${columnCount} column matches. Key context includes INCIDENTS, CREATED_DATE, SLA_BREACHED, ROOT_CAUSE, APP_NAME, USERS_AFFECTED, and COST_IMPACT.`;
+    });
+
+    await runStep('freshness', async () => {
+      const params = new URLSearchParams({ database: 'KAGGLE', schema: 'INCIDENT_MGMT', table: 'INCIDENTS', date_column: 'CREATED_DATE', expected_frequency: 'daily' });
+      const res = await fetch(`${API_BASE}/api/workbench/freshness?${params.toString()}`);
+      const data = await res.json();
+      evidence.freshness = data;
+      const row = data.results?.[0] || {};
+      return `${row.table_name || 'INCIDENTS'} freshness is ${row.status || 'unknown'} using ${row.date_column || 'CREATED_DATE'}. Age Hours: ${row.age_hours ?? '-'}, Latest Rows: ${row.latest_rows ?? '-'}, Previous Rows: ${row.previous_rows ?? '-'}.`;
+    });
+
+    await runStep('anomaly', async () => {
+      const params = new URLSearchParams({ database: 'KAGGLE', schema: 'INCIDENT_MGMT', table: 'INCIDENTS', column: 'COST_IMPACT' });
+      const res = await fetch(`${API_BASE}/api/workbench/anomaly?${params.toString()}`);
+      const data = await res.json();
+      evidence.anomaly = data;
+      return `COST_IMPACT anomaly scan used ${data.kind || 'numeric'} logic and returned ${data.rows?.length || 0} flagged rows. ${data.summary ? `Summary: ${JSON.stringify(data.summary).slice(0, 180)}` : ''}`;
+    });
+
+    await runStep('rag', async () => {
+      const query = 'What is the KAGGLE.INCIDENT_MGMT.INCIDENTS table used for and how should incident SLA and cost risk be triaged?';
+      const res = await fetch(`${API_BASE}/api/rag/search?query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      evidence.rag = data;
+      const citations = data.citations?.map(c => c.title || c.source || c).slice(0, 2).join(', ');
+      return `Retrieved ${data.source_chunks?.length || 0} knowledge chunks${citations ? ` from ${citations}` : ''}. The agent uses this evidence to avoid relying only on table names.`;
+    });
+
+    await runStep('incident', async () => {
+      const res = await fetch(`${API_BASE}/api/incident-command/dashboard`);
+      const data = await res.json();
+      evidence.incident = data;
+      const summary = data.summary || {};
+      return `Incident dashboard loaded ${Number(summary.total_incidents || 0).toLocaleString()} incidents, ${Number(summary.open_incidents || 0).toLocaleString()} open, ${Number(summary.critical_incidents || 0).toLocaleString()} critical, SLA compliance ${summary.sla_compliance_pct ?? '-'}%, business cost $${Number(summary.business_cost || 0).toLocaleString()}.`;
+    });
+
+    await runStep('cost', async () => {
+      const sql = `SELECT APP_NAME, ROOT_CAUSE, COUNT(*) AS INCIDENT_COUNT, SUM(COST_IMPACT) AS TOTAL_COST
+FROM KAGGLE.INCIDENT_MGMT.INCIDENTS
+WHERE CREATED_DATE >= DATEADD(day, -30, CURRENT_DATE())
+GROUP BY APP_NAME, ROOT_CAUSE
+ORDER BY TOTAL_COST DESC
+LIMIT 25`;
+      const res = await fetch(`${API_BASE}/api/sql/cost-advisor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql })
+      });
+      const data = await res.json();
+      evidence.cost = { ...data, sql };
+      return `Cost advisor reviewed targeted incident SQL. Estimated scan: ${data.estimated_scan_gb ?? 0} GB, estimated cost ${data.estimated_cost_label || '$0.00'}, optimized reduction ${data.optimized_reduction_pct || 0}%.`;
+    });
+
+    updateAgentStep('approval', {
+      status: 'waiting',
+      observation: 'Approval required before running remediation SQL. The agent prepared a safe dry-run validation query and a separate fix plan; no corrective SQL has been executed.'
+    });
+    setAgentApprovalRequired(true);
+
+    const summary = evidence.incident?.summary || {};
+    setAgentFinalReport({
+      status: 'waiting_approval',
+      rootCause: 'Primary hypothesis: recent SLA and cost risk is concentrated in high-impact incident groups. The agent found the operational table, checked recency, scanned COST_IMPACT anomalies, retrieved runbook context, and reviewed incident dashboard signals before recommending action.',
+      evidence: [
+        `Freshness: ${evidence.freshness?.results?.[0]?.status || 'unknown'}; age ${evidence.freshness?.results?.[0]?.age_hours ?? '-'} hours.`,
+        `Anomalies: ${evidence.anomaly?.rows?.length || 0} COST_IMPACT rows flagged for review.`,
+        `Incidents: ${Number(summary.open_incidents || 0).toLocaleString()} open, ${Number(summary.critical_incidents || 0).toLocaleString()} critical, SLA compliance ${summary.sla_compliance_pct ?? '-'}%.`,
+        `RAG: ${evidence.rag?.source_chunks?.length || 0} supporting knowledge chunks retrieved.`
+      ],
+      recommendation: 'Prioritize open Critical and High incidents with SLA breach, high user impact, high cost impact, and repeated root causes. Review change-linked incidents before proposing pipeline or release-governance fixes.',
+      remediationSql: `SELECT INCIDENT_ID, APP_NAME, SEVERITY, STATUS, SLA_BREACHED, USERS_AFFECTED, COST_IMPACT, ROOT_CAUSE
+FROM KAGGLE.INCIDENT_MGMT.INCIDENTS
+WHERE STATUS <> 'Resolved'
+  AND (SLA_BREACHED = TRUE OR SEVERITY IN ('Critical', 'High') OR COST_IMPACT > 10000)
+ORDER BY COST_IMPACT DESC
+LIMIT 100`,
+      auditTrail: Object.entries(evidence).map(([key, value]) => ({ tool: key, captured: Boolean(value), preview: summarizeRows(value?.rows || value?.results || value?.table_results || []) }))
+    });
+    updateAgentStep('report', { status: 'waiting', observation: 'Draft report generated. Final action plan is waiting for human approval.' });
+    setAgentRunning(false);
+    refreshAiUsage();
+  };
+
+  const approveAgentRemediation = async () => {
+    if (!agentFinalReport?.remediationSql || agentRunning) return;
+    setAgentRunning(true);
+    setAgentApprovalGranted(true);
+    updateAgentStep('approval', { status: 'running', observation: 'Approval granted. Running safe validation SQL with row limit before any corrective action.' });
+    try {
+      const res = await fetch(`${API_BASE}/api/execute-sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: agentFinalReport.remediationSql, limit: 25 })
+      });
+      const data = await res.json();
+      updateAgentStep('approval', { status: 'complete', observation: `Approved validation returned ${data.rows?.length || 0} preview rows. Corrective UPDATE/DELETE actions remain blocked unless reviewed outside the demo.` });
+      updateAgentStep('report', { status: 'complete', observation: 'Final report is complete with plan, evidence, approved validation query, and audit trail.' });
+      setAgentFinalReport(prev => ({
+        ...prev,
+        status: 'complete',
+        validationRows: data.rows || [],
+        evidence: [...(prev?.evidence || []), `Approved validation query returned ${data.rows?.length || 0} rows for human review.`]
+      }));
+    } catch (err) {
+      updateAgentStep('approval', { status: 'error', observation: err.message || 'Approved validation failed.' });
+    }
+    setAgentRunning(false);
+  };
+
+  const resetAgentCommandCenter = () => {
+    setAgentRunning(false);
+    setAgentApprovalRequired(false);
+    setAgentApprovalGranted(false);
+    setAgentFinalReport(null);
+    setAgentTimeline([
+      {
+        id: 'goal',
+        title: 'Goal Intake',
+        tool: 'Agent Planner',
+        status: 'ready',
+        observation: 'Enter a data operations goal and run the agent to generate a plan, execute tools, and produce an evidence-backed report.'
+      }
+    ]);
+  };
 
   const handleIngestDocumentSource = async (e) => {
     e.preventDefault();
@@ -2734,27 +3104,34 @@ LIMIT 100`;
 
   const runDemoChat = async (question) => {
     setDemoActiveContext(demoFinanceContext);
-    setDemoHoldChatSql(false);
-    setCurrentMessage('');
+    setDemoHoldChatSql(true);
+    setCurrentMessage(question);
     setChatMessages(prev => [
       ...prev.filter(msg => !msg.demoIntro),
       { sender: 'ai', text: `Demo context: ${demoContextLabel(demoFinanceContext)}`, demoIntro: true }
     ]);
+    document.querySelector('.chat-wrapper')?.scrollIntoView?.({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    await waitForDemo(900);
+    focusDemoDirectorTarget('.chat-input-container', 'Native language question');
+    await waitForDemo(3400);
     await handleSendChatMessage(question, demoFinanceContext, 'ai');
-    setDemoHoldChatSql(true);
     setGuidedDemoActionStatus('Holding generated SQL for the walkthrough...');
     const sqlBlock = await waitForDemoChatSqlBlock(9000);
     if (sqlBlock) {
       sqlBlock.classList.add('demo-active-sql-block');
-      sqlBlock.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-      await waitForDemo(900);
+      sqlBlock.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      await waitForDemo(1200);
       focusDemoDirectorTarget('.demo-active-sql-block', 'Generated SQL');
-      await waitForDemo(6200);
+      await waitForDemo(3400);
       sqlBlock.classList.remove('demo-active-sql-block');
+      await focusDemoChatLayer('.chat-bubble.ai .semantic-resolver-card', 'Semantic Table Resolver', { holdMs: 2600 });
+      await focusDemoChatLayer('.chat-bubble.ai .sql-firewall-card', 'SQL Validation Firewall', { holdMs: 3000 });
+      await focusDemoChatLayer('.chat-bubble.ai .explainability-timeline', 'Explainability Timeline', { holdMs: 3200 });
+      await focusDemoChatLayer('.chat-bubble.ai .ai-transparency-card', 'AI Response Transparency', { holdMs: 2600 });
     } else {
       await waitForDemo(4200);
     }
-    setDemoHoldChatSql(false);
+    document.querySelector('.chat-panel')?.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
   };
 
   const runDemoAskDataset = async (question, context = demoIncidentContext) => {
@@ -3166,6 +3543,19 @@ LIMIT 100;`;
         await loadWorkbenchQueryLog();
       } else if (step.tab === 'executionFootprint') {
         await refreshAiUsage();
+      } else if (step.tab === 'agentCommand') {
+        setAgentGoal(step.prompt || 'Investigate why incident cost and SLA risk increased recently, then prepare a safe remediation plan.');
+        await waitForDemo(900);
+        focusDemoDirectorTarget('.agent-goal-card', 'Agent goal');
+        await waitForDemo(1000);
+        await runAgentCommandCenter();
+        await waitForDemo(1200);
+        focusDemoDirectorTarget('.agent-timeline-card', 'Tool execution timeline');
+        await slowScrollDemoTarget('.agent-timeline-card', { initialPause: 1200, increments: [160, 170, 170], pause: 1200, block: 'start' });
+        focusDemoDirectorTarget('.agent-approval-card', 'Approval gate');
+        await waitForDemo(1800);
+        focusDemoDirectorTarget('.agent-report-card', 'Final report');
+        await slowScrollDemoTarget('.agent-report-card', { initialPause: 1200, increments: [130, 140], pause: 1200, block: 'center' });
       }
       setGuidedDemoActionStatus(`Ready: ${step.title}`);
       showDemoDirectorCue(step, 'result');
@@ -3285,6 +3675,18 @@ LIMIT 100;`;
           'Ask one business question at a time for cleaner SQL.',
           'Click Execute on generated SQL to populate the results console.',
           'Use suggested questions as quick smoke tests for a selected table.'
+        ]
+      };
+    }
+
+    if (activeTab === 'agentCommand') {
+      return {
+        title: 'Agent Command Tips',
+        tips: [
+          'Start with a goal, not a single SQL request.',
+          'Watch the agent plan, call tools, observe evidence, and decide the next step.',
+          'Approval gates stop remediation SQL or operational changes before execution.',
+          'Use the audit trail to explain exactly which tools the agent used.'
         ]
       };
     }
@@ -3698,6 +4100,22 @@ LIMIT 100;`;
       );
     }
     return <p className="rag-answer-text">{String(answer)}</p>;
+  };
+
+  const normalizeRagList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      return value.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
+    }
+    if (typeof value === 'object') return Object.values(value).flat();
+    return [value];
+  };
+
+  const formatRagCitation = (citation) => {
+    if (citation === null || citation === undefined) return '';
+    if (typeof citation === 'string' || typeof citation === 'number') return String(citation);
+    return citation.title || citation.TITLE || citation.source || citation.SOURCE || citation.name || JSON.stringify(citation);
   };
 
   const renderComparePreview = (pipeline) => {
@@ -5243,6 +5661,8 @@ LIMIT 100;`;
     );
   };
 
+  const hideDemoDirectorControls = demoDirectorEnabled && guidedDemoOpen && guidedDemoAutoPlay;
+
   return (
     <div className="app-container">
       {/* Sidebar Navigation */}
@@ -5255,6 +5675,16 @@ LIMIT 100;`;
         </div>
         
         <nav className="sidebar-menu">
+          <div
+            className={`sidebar-item ${activeTab === 'agentCommand' ? 'active' : ''}`}
+            data-demo-tab="agentCommand"
+            onClick={() => setActiveTab('agentCommand')}
+            title="Agentic: plans, calls tools, observes results, gates approval, and produces an audit trail."
+          >
+            <Sparkles size={16} />
+            <span>Agent Command Center</span>
+          </div>
+
           <div 
             className={`sidebar-item ${activeTab === 'chat' ? 'active' : ''}`}
             data-demo-tab="chat"
@@ -5525,6 +5955,7 @@ LIMIT 100;`;
           <div className="header-top-row">
             <div className="header-title-section">
               <h1>
+                {activeTab === 'agentCommand' && 'DataOps Agent Command Center'}
                 {activeTab === 'chat' && 'AI Analyst Studio'}
                 {activeTab === 'sql' && 'SQL Explainer & Performance Tuning'}
                 {activeTab === 'tableDetails' && 'Table Intelligence Studio'}
@@ -5538,6 +5969,7 @@ LIMIT 100;`;
                 {activeTab === 'executionFootprint' && 'Execution Footprint'}
               </h1>
               <p>
+                {activeTab === 'agentCommand' && 'Run a visible agentic workflow: goal, plan, tool execution, observations, approval gate, and audit-ready final report.'}
                 {activeTab === 'chat' && 'Chat with data and build report views from native language.'}
                 {activeTab === 'sql' && 'Explain, identify inefficiencies, and auto-tune queries.'}
                 {activeTab === 'tableDetails' && 'Inspect, profile, and generate analyst-style insights for one selected table.'}
@@ -5558,7 +5990,7 @@ LIMIT 100;`;
                   {currentExecutionApp.mode}
                 </div>
               )}
-              {demoDirectorEnabled && (
+              {demoDirectorEnabled && !hideDemoDirectorControls && (
                 <button
                   className={`guided-demo-launch ${guidedDemoOpen ? 'active' : ''}`}
                   type="button"
@@ -5592,7 +6024,9 @@ LIMIT 100;`;
                   borderRadius: '50%', 
                   backgroundColor: connectionStatus.status === 'connected' 
                     ? (connectionStatus.mode.endsWith('_FALLBACK') ? 'var(--accent-orange)' : 'var(--accent-green)') 
-                    : 'var(--accent-orange)' 
+                    : connectionStatus.status === 'connecting'
+                      ? 'var(--accent-cyan)'
+                      : 'var(--accent-orange)' 
                 }}></div>
                 <span style={{ fontWeight: 600 }}>
                   {connectionStatus.status === 'connected' 
@@ -5601,7 +6035,9 @@ LIMIT 100;`;
                         : connectionStatus.mode.endsWith('_FALLBACK')
                           ? `${connectionStatus.mode.replace('_FALLBACK', '')} (Fallback)`
                           : `${connectionStatus.mode} Connected`)
-                    : 'Disconnected'}
+                    : connectionStatus.status === 'connecting'
+                      ? 'Checking Connection'
+                      : 'Connection Pending'}
                 </span>
               </div>
             </div>
@@ -5657,7 +6093,7 @@ LIMIT 100;`;
           )}
         </header>
 
-        {demoDirectorEnabled && guidedDemoOpen && demoDirectorPanelMinimized && (
+        {demoDirectorEnabled && guidedDemoOpen && demoDirectorPanelMinimized && !hideDemoDirectorControls && (
           <button
             className="demo-director-hidden-control"
             type="button"
@@ -5667,7 +6103,7 @@ LIMIT 100;`;
           </button>
         )}
 
-        {demoDirectorEnabled && guidedDemoOpen && guidedDemoStep && !demoDirectorPanelMinimized && (
+        {demoDirectorEnabled && guidedDemoOpen && guidedDemoStep && !demoDirectorPanelMinimized && !hideDemoDirectorControls && (
           <div className="guided-demo-panel">
             <div className="guided-demo-header">
               <div>
@@ -5809,7 +6245,164 @@ LIMIT 100;`;
 
         {/* Tab Rendering Switch */}
         <div className={`tab-content ${activeTab === 'chat' ? 'chat-tab-content' : ''}`}>
-          
+          {activeTab === 'agentCommand' && (
+            <div className="panel-body agent-command-page">
+              <div className="agent-hero glass-card">
+                <div>
+                  <span className="compare-pipeline-kicker">Autonomous DataOps Copilot</span>
+                  <h2>Goal-driven agent workflow over Snowflake, RAG, quality, cost, and governance tools.</h2>
+                  <p>This command center makes the agent loop explicit: understand the goal, plan steps, call tools, observe evidence, request approval, and produce an audit trail.</p>
+                </div>
+                <div className="agent-loop-strip">
+                  {['Goal', 'Plan', 'Tools', 'Observe', 'Approve', 'Report'].map(item => <span key={item}>{item}</span>)}
+                </div>
+              </div>
+
+              <div className="agent-layout">
+                <div className="glass-card agent-goal-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><Sparkles size={16} /> Agent Goal</span>
+                    <span className={`status-badge ${agentRunning ? 'running' : agentFinalReport?.status === 'complete' ? 'fresh' : ''}`}>
+                      {agentRunning ? 'Running' : agentFinalReport?.status === 'complete' ? 'Complete' : 'Ready'}
+                    </span>
+                  </div>
+                  <textarea
+                    className="agent-goal-input"
+                    value={agentGoal}
+                    onChange={(e) => setAgentGoal(e.target.value)}
+                    placeholder="Example: Investigate why customer revenue dropped yesterday and prepare a fix plan."
+                    disabled={agentRunning}
+                  />
+                  <div className="agent-action-row">
+                    <button className="btn btn-primary" onClick={runAgentCommandCenter} disabled={agentRunning || !agentGoal.trim()}>
+                      <Play size={14} /> {agentRunning ? 'Agent Running...' : 'Run DataOps Agent'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={resetAgentCommandCenter} disabled={agentRunning}>Reset</button>
+                  </div>
+                  <div className="agent-persona-card">
+                    <strong>Agent Persona: Enterprise Data Pilot Agent</strong>
+                    <p>Acts like a senior DataOps analyst: metadata-grounded, cost-aware, cautious with SQL, evidence-seeking, and approval-first for risky changes.</p>
+                  </div>
+                </div>
+
+                <div className="glass-card agent-toolbox-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><ShieldCheck size={16} /> Toolset Available</span>
+                    <span className="status-badge">Tool-using agent</span>
+                  </div>
+                  <div className="agent-tool-grid">
+                    {[
+                      ['Metadata', 'Resolve DB/schema/table/columns'],
+                      ['Snowflake SQL', 'Execute limited validation queries'],
+                      ['Freshness', 'Check recency and volume shift'],
+                      ['Anomaly', 'Scan numeric/date/text risk'],
+                      ['RAG', 'Retrieve runbook/document evidence'],
+                      ['Cost Advisor', 'Estimate scan and optimization risk'],
+                      ['Incident Tools', 'Load KPIs, trends, root causes'],
+                      ['Governance', 'Query log, tokens, approval trail']
+                    ].map(([label, text]) => (
+                      <div key={label}>
+                        <strong>{label}</strong>
+                        <span>{text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-card agent-timeline-card">
+                <div className="glass-card-header">
+                  <span className="glass-card-title"><Activity size={16} /> Tool Execution Timeline</span>
+                  <span className="status-badge">{agentTimeline.filter(step => step.status === 'complete').length}/{agentTimeline.length} complete</span>
+                </div>
+                <div className="agent-timeline">
+                  {agentTimeline.map((step, idx) => (
+                    <div key={step.id} className={`agent-step ${step.status}`}>
+                      <div className="agent-step-index">{idx + 1}</div>
+                      <div className="agent-step-body">
+                        <div className="agent-step-header">
+                          <div>
+                            <span>{step.tool}</span>
+                            <strong>{step.title}</strong>
+                          </div>
+                          <em>{step.status}</em>
+                        </div>
+                        {step.action && <p className="agent-step-action">{step.action}</p>}
+                        <p>{step.observation || 'Waiting for prior step.'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {agentApprovalRequired && agentFinalReport && (
+                <div className={`glass-card agent-approval-card ${agentApprovalGranted ? 'approved' : ''}`}>
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><ShieldAlert size={16} /> Human Approval Gate</span>
+                    <span className="status-badge">{agentApprovalGranted ? 'Approved' : 'Waiting Approval'}</span>
+                  </div>
+                  <p>The agent prepared a safe validation query before any remediation action. This demonstrates human-in-the-loop control: the agent can recommend action, but potentially risky execution requires approval.</p>
+                  <div className="agent-sql-review">
+                    <div className="code-header">
+                      <span>Approved dry-run validation SQL</span>
+                      {renderSqlActionButtons(agentFinalReport.remediationSql, 'Agent Remediation Validation', { inline: true })}
+                    </div>
+                    <pre className="code-block">{agentFinalReport.remediationSql}</pre>
+                  </div>
+                  <button className="btn btn-primary" onClick={approveAgentRemediation} disabled={agentRunning || agentApprovalGranted}>
+                    <Play size={14} /> Approve and Run Validation
+                  </button>
+                </div>
+              )}
+
+              {agentFinalReport && (
+                <div className="glass-card agent-report-card">
+                  <div className="glass-card-header">
+                    <span className="glass-card-title"><Terminal size={16} /> Final Agent Report</span>
+                    <span className="status-badge">{agentFinalReport.status === 'complete' ? 'Audit Ready' : 'Draft'}</span>
+                  </div>
+                  <div className="agent-report-grid">
+                    <div>
+                      <span>Root-Cause Hypothesis</span>
+                      <p>{agentFinalReport.rootCause}</p>
+                    </div>
+                    <div>
+                      <span>Recommended Fix Plan</span>
+                      <p>{agentFinalReport.recommendation}</p>
+                    </div>
+                  </div>
+                  <div className="agent-evidence-list">
+                    <span>Evidence Used</span>
+                    {(agentFinalReport.evidence || []).map((item, idx) => <div key={idx}>{item}</div>)}
+                  </div>
+                  {agentFinalReport.validationRows?.length > 0 && (
+                    <div className="table-container">
+                      <table className="custom-table">
+                        <thead>
+                          <tr>{Object.keys(agentFinalReport.validationRows[0]).map(key => <th key={key}>{key}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {agentFinalReport.validationRows.slice(0, 10).map((row, idx) => (
+                            <tr key={idx}>{Object.keys(agentFinalReport.validationRows[0]).map(key => <td key={key}>{String(row[key] ?? '')}</td>)}</tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div className="agent-audit-list">
+                    <span>Audit Trail</span>
+                    {(agentFinalReport.auditTrail || []).map(item => (
+                      <div key={item.tool}>
+                        <strong>{item.tool}</strong>
+                        <p>{item.captured ? item.preview : 'No evidence captured.'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: AI Analyst Studio */}
           {activeTab === 'chat' && (
             <div className={`analyst-studio-shell ${analystStudioTab === 'chat' ? 'chat-mode' : 'scroll-mode'}`}>
@@ -7771,7 +8364,7 @@ LIMIT 100;`;
             </div>
           )}
 
-          {activeTab !== 'chat' && activeTab !== 'executionFootprint' && renderSqlResultsCard()}
+          {activeTab !== 'chat' && activeTab !== 'executionFootprint' && activeTab !== 'agentCommand' && renderSqlResultsCard()}
 
           {/* TAB 3: Metadata & Dictionary */}
           {activeTab === 'metadata' && (
@@ -8664,11 +9257,11 @@ LIMIT 100;`;
                       {renderRagAnswer(ragResult.answer)}
                       {renderAiTransparency(ragResult.ai_metadata)}
                       
-                      {ragResult.citations?.length > 0 && (
+                      {normalizeRagList(ragResult.citations).length > 0 && (
                         <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          <strong>Sources Cited:</strong> {ragResult.citations.map((c, i) => (
+                          <strong>Sources Cited:</strong> {normalizeRagList(ragResult.citations).map((c, i) => (
                             <span key={i} className="status-badge" style={{ marginLeft: '6px', backgroundColor: 'rgba(255,255,255,0.03)', color: '#ffffff', border: '1px solid var(--border-light)' }}>
-                              {c}
+                              {formatRagCitation(c)}
                             </span>
                           ))}
                         </div>
@@ -8678,18 +9271,20 @@ LIMIT 100;`;
                     {/* Source Documents */}
                     <div className="rag-source-panel">
                       <button type="button" className="rag-source-toggle" onClick={() => setRagSourcesOpen(prev => !prev)}>
-                        <span>Retrieved Knowledge Source Snippets ({ragResult.source_chunks?.length || 0})</span>
+                        <span>Retrieved Knowledge Source Snippets ({normalizeRagList(ragResult.source_chunks).length})</span>
                         <span>{ragSourcesOpen ? 'Hide' : 'Show'}</span>
                       </button>
                       {ragSourcesOpen && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                          {ragResult.source_chunks?.map((chunk, idx) => (
+                          {normalizeRagList(ragResult.source_chunks).map((chunk, idx) => (
                             <div key={idx} className="glass-card" style={{ padding: '14px', backgroundColor: 'rgba(255,255,255,0.01)' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '12px', fontWeight: 600, color: 'var(--accent-purple)' }}>
-                                <span>{chunk.TITLE}</span>
-                                <span className="status-badge" style={{ fontSize: '9px' }}>{chunk.SOURCE_TYPE}</span>
+                                <span>{chunk?.TITLE || chunk?.title || chunk?.source || `Source ${idx + 1}`}</span>
+                                <span className="status-badge" style={{ fontSize: '9px' }}>{chunk?.SOURCE_TYPE || chunk?.source_type || 'SOURCE'}</span>
                               </div>
-                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>{chunk.CONTENT}</p>
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>
+                                {chunk?.CONTENT || chunk?.content || chunk?.text || String(chunk)}
+                              </p>
                             </div>
                           ))}
                         </div>

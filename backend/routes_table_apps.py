@@ -42,8 +42,12 @@ def log_query(query: str, purpose: str = "User query"):
         "platform": db.active_platform,
         "source": "Mock" if db.use_mock else db.active_platform,
     }
-    with QUERY_LOG_PATH.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(entry, default=str) + "\n")
+    try:
+        QUERY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with QUERY_LOG_PATH.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(entry, default=str) + "\n")
+    except OSError as exc:
+        print(f"Query log write skipped: {exc}")
     return entry
 
 

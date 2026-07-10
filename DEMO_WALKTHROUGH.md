@@ -1,8 +1,33 @@
 # Data Pilot Studio Demo Script and Presentation Walkthrough
 
-Target length: 12 to 13 minutes raw capture, then trim to 5 to 7 minutes  
+Target length: under 7 minutes for the final recording  
 Intended viewers: executives, data platform leaders, engineers, analysts, and business users  
 Demo style: product launch demo, not a code walkthrough
+
+## Agentic Positioning
+
+The strongest story is not "Data Pilot is an AI dashboard." The stronger story is:
+
+**Data Pilot Studio is a governed enterprise data platform with a central DataOps Agent that can operate the platform's specialist tools.**
+
+The individual applications are the agent's toolbelt:
+
+- AI Analyst Studio: natural language SQL, charts, explanations, and report generation.
+- SQL Explainer and Performance Tuning: cost-aware SQL review and optimization.
+- Table Intelligence Studio: metadata, profile statistics, volume patterns, data quality checks, and table insights.
+- Column / Table Search: metadata discovery across Snowflake schemas.
+- Anomaly Detector: statistical and rule-based anomaly detection.
+- Data Freshness: recency, latest rows, previous rows, and trend checks.
+- Document Hub: RAG-based retrieval over runbooks, table docs, files, and web content.
+- Cost Analyzer: Snowflake spend and expensive-query visibility.
+- Query Log and Execution Footprint: audit trail, tokens, cache savings, and governance.
+- Incident Command Center: a client-specific operational application.
+
+**Agent Command Center is the agentic layer.** It receives a goal, plans the investigation, calls the right tools, observes the evidence, pauses for human approval before risky action, and produces an audit-ready final report.
+
+Use this sentence in the video:
+
+> "The specialist apps are the tools. Agent Command Center is the agent. It turns a broad DataOps goal into a plan, executes the right tools, observes results, asks for approval when needed, and creates an evidence-backed action plan."
 
 ## 1. Complete Application Review
 
@@ -23,33 +48,42 @@ Visible application areas:
    - Prompt Reuse Cache avoids repeated provider calls for repeated prompts.
    - Token Budget Guardrails help prevent uncontrolled AI spend.
 
-3. AI Analyst Studio
+3. Agent Command Center
+   - Central agentic workflow.
+   - Starts from a goal, not a single SQL command.
+   - Builds an investigation plan.
+   - Calls metadata, freshness, anomaly, RAG, cost, and incident tools.
+   - Shows observations after each tool.
+   - Adds a human approval gate before remediation-style SQL.
+   - Produces root-cause hypothesis, evidence, recommended fix plan, SQL, and audit trail.
+
+4. AI Analyst Studio
    - Chat tab: native language questions against selected Snowflake tables.
    - Ask Dataset tab: generates SQL, runs it, returns chart, explanation, and result preview.
    - Report Builder tab: builds a visual report from native language.
    - Compare mode: shows Native and AI generated SQL, results, explanations, metrics, and why AI is closer to the business intent.
 
-4. SQL Explainer and Performance Tuning
+5. SQL Explainer and Performance Tuning
    - SQL input console.
    - Combined Analyze and Optimize action.
    - Cost-aware query advisor.
    - AI performance optimization report.
    - Optimized SQL suggestion with copy and execute.
 
-5. Table Intelligence Studio
+6. Table Intelligence Studio
    - Overview.
    - Table Details: metadata, sample rows, AI descriptions, generated DDL, quick queries.
    - Table Profiler: row count, column count, null columns, empty columns, column stats, AI health report, DQ SQL checks, column labels.
    - Volume Analyzer: user-selected date field, batch/event mode, throughput plot, peak heatmap, bar-by-day, bar-by-hour, bubble view, flagged volume anomalies.
    - Insight Generator: trends, anomalies, correlations, KPIs, PII-like signals, generated query cards.
 
-6. Column / Table Search
+7. Column / Table Search
    - Search tables and columns separately.
    - Filter columns by data type.
    - Filter column results by table keyword.
    - Generate SELECT for matching tables.
 
-7. Anomaly Detector
+8. Anomaly Detector
    - Select database, schema, table/view, and column.
    - Numeric: z-score and IQR style outlier analysis.
    - Date/time: bucketed trend anomaly detection using rolling median, MAD, and modified z-score.
@@ -57,38 +91,38 @@ Visible application areas:
    - Chart options: auto, bar, best fit, pareto, scatter style views depending on data.
    - Custom rule tab with executable SQL preview.
 
-8. Data Freshness
+9. Data Freshness
    - Select database, schema, optional table, frequency, and date field.
    - Shows fresh, warning, stale status.
    - Adds latest rows, previous rows, trend, age hours, and table-level freshness context.
 
-9. Cost Analyzer
+10. Cost Analyzer
    - Uses Snowflake account usage style data.
    - Shows credit trends, warehouse cost, user cost, expensive query scatter, and cost recommendations.
 
-10. Incident Command Center
+11. Incident Command Center
    - Snowflake-backed enterprise demo using `KAGGLE.INCIDENT_MGMT`.
    - Reads loaded Snowflake tables: applications, employees, change requests, incidents.
    - Dashboard KPIs, incident trend, priority distribution, root causes, top applications.
    - Native language triage and Compare mode.
 
-11. Document Hub
+12. Document Hub
    - Ingests web pages, local text/file content, JSON, CSV, Excel-style content, and batch sources.
    - Supports crawl depth and source chunks.
    - Uses rich RAG-based search to retrieve source chunks and answer with citations.
 
-12. Query Log
+13. Query Log
    - Persistent SQL execution history.
    - Shows queries run across the workbench.
    - Lets users review and rerun SQL.
 
-13. Execution Footprint
+14. Execution Footprint
    - Shows which apps use Native logic, optional LLM, or hybrid mode.
    - Tracks accumulated LLM prompts, tokens, estimated cost, average response time, and recent events.
    - Persists until the user resets usage.
    - Shows spend-aware decisions, prompt cache savings, and token budget status.
 
-14. Demo Director
+15. Demo Director
    - Presenter overlay built into the app.
    - Walks through the recommended hackathon storyline step by step.
    - Navigates to the correct app section and sub-tab.
@@ -113,16 +147,23 @@ Table strategy:
 - Use the incident table for Table Intelligence, anomaly detection, freshness, SQL tuning, search, and operational quality because the date and cost fields support richer monitoring visuals.
 - End with Incident Command Center to show that Data Pilot can be customized into a client-specific application, not only generic table exploration.
 
-Timing:
+Strict under-7-minute timing:
 
 | Time | Section | Goal |
 | --- | --- | --- |
-| 0:00-2:25 | Open and configure | Show app landscape, database platforms, Snowflake auth, session, AI config, and Native/AI/Compare modes |
-| 2:25-5:00 | AI Analyst Studio | AI Chat, Ask Dataset, and Report Builder on `KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA` |
-| 5:00-8:25 | Table Intelligence + Quality | Metadata, profile, volume, insights, anomaly, and freshness on `KAGGLE.INCIDENT_MGMT.INCIDENTS` |
-| 8:25-11:00 | SQL, Cost, Search, Documents | SQL tuning, Snowflake cost analytics, search, and a slower Document Hub question-to-answer moment |
-| 11:00-12:30 | Query Log + Execution Footprint | Auditability, token transparency, spend-aware AI, native vs AI clarity |
-| 12:30+ | Custom Client Application | Incident Command Center as the client-specific operational application |
+| 0:00-0:40 | Opening + Configuration | Show the landscape, Snowflake session, AI config, and Native/AI/Compare modes quickly |
+| 0:40-2:25 | AI Analyst Studio | AI Chat, Ask Dataset, and Report Builder on `KAGGLE.FINANCE_TRAN.FINANCE_CARDS_DATA` |
+| 2:25-3:50 | Table Intelligence | Metadata/profile, Volume Analyzer, and Insight Generator on `KAGGLE.INCIDENT_MGMT.INCIDENTS` |
+| 3:50-5:30 | Operations Tools | Anomaly, Freshness, SQL tuning, Cost Analyzer, and Search |
+| 5:30-6:20 | Knowledge + Governance | Document Hub RAG, Query Log, and Execution Footprint |
+| 6:20-6:42 | Agent Command Center | Show the agentic workflow: goal, plan, tools, observations, approval gate, final report |
+| 6:42-6:55 | Incident Command Center + Close | Show client-specific customization and close the story |
+
+Why Agent Command Center appears near the end:
+
+- The first part of the video proves the platform has real specialist tools.
+- Agent Command Center then becomes the payoff: the agent can use those tools to complete a broader DataOps goal.
+- Incident Command Center closes the demo by showing that the same platform can be customized for a client-specific domain.
 
 ## Demo Director In The App
 
@@ -174,8 +215,22 @@ Demo Director steps included in the app:
 17. Document Hub
 18. Persistent Query Log
 19. Execution Footprint And Spend-Aware AI
-20. Governance And AI Transparency
+20. Agent Command Center
 21. Custom Client Application
+
+Agent Command Center demo beat:
+
+1. The goal is preloaded:
+   - `Investigate why incident cost and SLA risk increased recently, then prepare a safe remediation plan.`
+2. The agent creates a visible plan.
+3. It calls tools for metadata, freshness, anomaly detection, RAG, incident KPIs, and SQL cost advice.
+4. Each tool creates an observation.
+5. The workflow stops at a human approval gate before remediation-style SQL.
+6. The final report shows hypothesis, evidence, recommendation, validation SQL, and audit trail.
+
+Voice-over for this beat:
+
+> "So far we have seen the specialist tools. Agent Command Center is the agentic layer on top of them. It takes a broad DataOps goal, plans the investigation, calls the right tools, observes the evidence, pauses for approval before risky action, and produces an audit-ready report. This is how Data Pilot moves from an AI-enabled application to an agentic enterprise data copilot."
 
 ## 3. Navigation Path For Every Click
 
@@ -507,7 +562,7 @@ We do not just show generated SQL. We show why DataPilot trusted, blocked, cache
 
 The current Demo Director narration is maintained in `DEMO_VOICEOVER_SCRIPT.md`. Use that file as the source of truth for the recording script because it includes the latest flow: finance-table AI Chat, finance-table Ask Dataset and Report Builder, incident-table intelligence and quality checks, and Incident Command Center as the final custom client application.
 
-### 0:00-0:35 - Opening and Configuration
+### 0:00-0:40 - Opening and Configuration
 
 Screen: Data Pilot Studio home state with left sidebar visible.
 
@@ -515,7 +570,7 @@ Action:
 Show the left navigation, open Database Settings, show database platform options, show Snowflake authentication methods, then show AI Configuration with Execution Mode, provider, model, and Test Connection status.
 
 Voice-over:
-"Welcome to Data Pilot Studio, an AI-powered enterprise data copilot for live data workflows. The left navigation brings analyst questions, SQL tuning, table intelligence, search, anomaly detection, freshness, cost analytics, document search, query history, AI usage governance, and client-specific applications into one workspace. Database settings are configured separately from AI settings. The database platform selector supports mock mode, Snowflake, Redshift, and PostgreSQL style targets. For this demo, Snowflake is used as the live connection, with authentication options for password, SSO external browser, and token-based access. The AI layer is provider-agnostic, and Compare mode runs Native and AI approaches side by side."
+"Data Pilot Studio is a governed AI data copilot for live Snowflake workflows. The left navigation shows the platform breadth: analyst questions, SQL tuning, table intelligence, search, anomalies, freshness, cost, documents, query history, governance, and incident operations. Connection settings and AI settings are separated. Snowflake handles platform, authentication, role, and warehouse. The AI layer is provider agnostic, with Native, AI, and Compare modes. Native runs Python and Snowflake logic, AI adds model reasoning, and Compare shows both outputs side by side."
 
 ### 2:25-5:00 - AI Analyst Studio
 
