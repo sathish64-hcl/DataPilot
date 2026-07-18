@@ -11,24 +11,38 @@ class DatabaseManager:
         self.conn_snowflake = None
         self.conn_redshift = None
         self.conn_postgresql = None
+        default_password = os.getenv("DATA_PILOT_SNOWFLAKE_PASSWORD", "")
         self.snowflake_config = {
-            "account": "gmwuipy-iv44557",
-            "user": "HCLHACKATHON",
-            "password": "Indian-1234567"
+            "account": os.getenv("DATA_PILOT_SNOWFLAKE_ACCOUNT", "gmwuipy-iv44557"),
+            "user": os.getenv("DATA_PILOT_SNOWFLAKE_USER", "")
         }
+        if default_password:
+            self.snowflake_config["password"] = default_password
+        for env_key, config_key in (
+            ("DATA_PILOT_SNOWFLAKE_ROLE", "role"),
+            ("DATA_PILOT_SNOWFLAKE_WAREHOUSE", "warehouse"),
+            ("DATA_PILOT_SNOWFLAKE_DATABASE", "database"),
+            ("DATA_PILOT_SNOWFLAKE_SCHEMA", "schema"),
+        ):
+            value = os.getenv(env_key)
+            if value:
+                self.snowflake_config[config_key] = value
         self.redshift_config = {}
         self.postgresql_config = {}
         self.active_platform = "SNOWFLAKE"
         self.use_mock = False
         self.init_mock_db()
         
-        try:
-            print("Attempting to auto-connect to Snowflake on startup...")
-            success, msg = self.connect_snowflake()
-            print(msg)
-        except Exception as e:
-            print(f"Auto-connect to Snowflake failed: {e}")
-            self.use_mock = True
+        if self.snowflake_config.get("user") and self.snowflake_config.get("password"):
+            try:
+                print("Attempting to auto-connect to Snowflake on startup...")
+                success, msg = self.connect_snowflake()
+                print(msg)
+            except Exception as e:
+                print(f"Auto-connect to Snowflake failed: {e}")
+                self.use_mock = True
+        else:
+            print("Snowflake auto-connect skipped: credentials are not configured.")
 
     def extract_account_id(self, account_url: str) -> str:
         if not account_url:

@@ -209,8 +209,8 @@ function App() {
   const [connectionConfig, setConnectionConfig] = useState({
     platform: 'SNOWFLAKE',
     account: 'https://gmwuipy-iv44557.snowflakecomputing.com',
-    user: 'HCLHACKATHON',
-    password: 'Indian-1234567',
+    user: '',
+    password: '',
     role: '',
     warehouse: '',
     database: '',

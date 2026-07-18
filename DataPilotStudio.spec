@@ -18,7 +18,7 @@ seen_binaries = set()
 
 
 def add_binary(path, dest="."):
-    key = str(Path(path).resolve()).lower()
+    key = (dest, Path(path).name.lower())
     if key not in seen_binaries:
         seen_binaries.add(key)
         binaries.append((str(path), dest))
@@ -26,14 +26,8 @@ def add_binary(path, dest="."):
 
 for dll_dir in (
     Path(sys.prefix),
-    Path(sys.base_prefix),
     Path(sys.prefix) / "DLLs",
-    Path(sys.base_prefix) / "DLLs",
     Path(sys.prefix) / "Library" / "bin",
-    Path(sys.base_prefix) / "Library" / "bin",
-    Path.home() / "anaconda3" / "Library" / "bin",
-    Path.home() / "miniconda3" / "Library" / "bin",
-    Path.home() / "miniconda3" / "envs" / "datapilot" / "Library" / "bin",
 ):
     if dll_dir.exists():
         for pattern in (
