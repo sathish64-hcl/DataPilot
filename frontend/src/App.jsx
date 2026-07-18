@@ -208,7 +208,7 @@ function App() {
   const [activeType, setActiveType] = useState('ALL');
   const [connectionConfig, setConnectionConfig] = useState({
     platform: 'SNOWFLAKE',
-    account: 'https://uxcqeib-tb48867.snowflakecomputing.com',
+    account: 'https://gmwuipy-iv44557.snowflakecomputing.com',
     user: 'HCLHACKATHON',
     password: 'Indian-1234567',
     role: '',

@@ -12,7 +12,7 @@ class DatabaseManager:
         self.conn_redshift = None
         self.conn_postgresql = None
         self.snowflake_config = {
-            "account": "uxcqeib-tb48867",
+            "account": "gmwuipy-iv44557",
             "user": "HCLHACKATHON",
             "password": "Indian-1234567"
         }
